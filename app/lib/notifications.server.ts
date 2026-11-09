@@ -1,5 +1,6 @@
 import { and, count, eq, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import { formatPrice } from "~/lib/utils";
 import {
   coupons,
   courses,
@@ -7,6 +8,7 @@ import {
   purchases,
   refunds,
   RefundStatus,
+  UserRole,
   users,
 } from "~/db/schema";
 import { getPurchaseKind, type Db } from "~/lib/refunds.server";
@@ -45,6 +47,53 @@ async function send(notifier: Notifier, trigger: Trigger): Promise<void> {
 }
 
 // ─── Refund Requests ───
+
+/** Tells every Platform Admin, other than the buyer, about a new Open Refund Request. */
+export async function notifyRefundRequestRaised(
+  db: Db,
+  notifier: Notifier,
+  refundRequestId: number
+): Promise<void> {
+  const row = db
+    .select({
+      reason: refunds.reason,
+      amountPaid: purchases.amountPaid,
+      buyer: { id: users.id, name: users.name },
+      courseTitle: courses.title,
+    })
+    .from(refunds)
+    .innerJoin(purchases, eq(refunds.purchaseId, purchases.id))
+    .innerJoin(users, eq(purchases.userId, users.id))
+    .innerJoin(courses, eq(purchases.courseId, courses.id))
+    .where(eq(refunds.id, refundRequestId))
+    .get();
+
+  if (!row) return;
+
+  // Read at trigger time, so a newly promoted admin is included.
+  const admins = db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(eq(users.role, UserRole.Admin))
+    .all()
+    .filter((admin) => admin.id !== row.buyer.id);
+
+  if (admins.length === 0) return;
+
+  await send(notifier, {
+    workflow: "refund-request-opened",
+    recipients: admins.map(toRecipient),
+    data: {
+      kind: "refund_request_opened",
+      actor_name: row.buyer.name,
+      course_title: row.courseTitle,
+      amount: formatPrice(row.amountPaid),
+      reason: row.reason,
+      url: "/admin/refunds",
+    },
+    idempotencyKey: `refund:${refundRequestId}:opened`,
+  });
+}
 
 const DECISIONS: Partial<
   Record<RefundStatus, { workflow: string; kind: string }>

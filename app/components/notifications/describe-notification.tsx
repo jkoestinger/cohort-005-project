@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { FeedItem } from "@knocklabs/client";
-import { CheckCircle2, Ticket, UserPlus, XCircle } from "lucide-react";
+import { CheckCircle2, ReceiptText, Ticket, UserPlus, XCircle } from "lucide-react";
 import { z } from "zod";
 
 // ─── What a Notification row says ───
@@ -12,6 +12,15 @@ const refundDecidedSchema = z.object({
   kind: z.enum(["refund_request_approved", "refund_request_declined"]),
   course_title: z.string(),
   note: z.string().optional(),
+  url: z.string().startsWith("/"),
+});
+
+const refundOpenedSchema = z.object({
+  kind: z.literal("refund_request_opened"),
+  actor_name: z.string(),
+  course_title: z.string(),
+  amount: z.string(),
+  reason: z.string(),
   url: z.string().startsWith("/"),
 });
 
@@ -32,6 +41,7 @@ const enrollmentCreatedSchema = z.object({
 
 const notificationDataSchema = z.discriminatedUnion("kind", [
   refundDecidedSchema,
+  refundOpenedSchema,
   seatClaimedSchema,
   enrollmentCreatedSchema,
 ]);
@@ -71,6 +81,19 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
         tone: "text-rose-600",
         title: <>Your Refund Request for {bold(data.course_title)} was declined</>,
         detail: data.note ? `${data.note} You can ask again.` : "You can ask again.",
+        url: data.url,
+      };
+    case "refund_request_opened":
+      return {
+        icon: <ReceiptText className="size-4" />,
+        tone: "text-amber-600",
+        title: (
+          <>
+            {bold(data.actor_name)} asked for a {data.amount} refund on{" "}
+            {bold(data.course_title)}
+          </>
+        ),
+        detail: data.reason,
         url: data.url,
       };
     case "seat_claimed":
