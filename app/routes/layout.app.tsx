@@ -3,6 +3,11 @@ import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
 import { Toaster } from "sonner";
+import {
+  NotificationsPrototype,
+  ProtoControls,
+  ProtoMain,
+} from "~/components/notifications-prototype"; // PROTOTYPE
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
 import { eq, and, or, sql, desc } from "drizzle-orm";
@@ -171,6 +176,25 @@ function getRecentlyProgressedCourses(userId: number, limit: number = 3) {
     .all();
 }
 
+// PROTOTYPE: one real course + lesson so click-throughs land on real pages.
+function getPrototypeSample() {
+  const row = db
+    .select({
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
+      lessonTitle: lessons.title,
+      lessonId: lessons.id,
+    })
+    .from(lessons)
+    .innerJoin(modules, eq(lessons.moduleId, modules.id))
+    .innerJoin(courses, eq(modules.courseId, courses.id))
+    .limit(1)
+    .get();
+  return (
+    row ?? { courseTitle: "Intro to React", courseSlug: "intro", lessonTitle: "Hooks", lessonId: 1 }
+  );
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const users = getAllUsers();
   const currentUserId = await getCurrentUserId(request);
@@ -213,6 +237,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    prototypeSample: getPrototypeSample(),
   };
 }
 
@@ -225,9 +250,16 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
+    prototypeSample,
   } = loaderData;
 
   return (
+    <NotificationsPrototype
+      key={currentUser?.id ?? "anon"}
+      role={currentUser?.role ?? null}
+      isTeamAdmin={userIsTeamAdmin}
+      sample={prototypeSample}
+    >
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         currentUser={currentUser}
@@ -235,7 +267,9 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         isTeamAdmin={userIsTeamAdmin}
       />
       <main className="flex-1 overflow-y-auto">
-        <Outlet />
+        <ProtoMain>
+          <Outlet />
+        </ProtoMain>
       </main>
       <DevUI
         users={users}
@@ -245,6 +279,8 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countries={countries}
       />
       <Toaster position="bottom-right" richColors closeButton />
+      <ProtoControls />
     </div>
+    </NotificationsPrototype>
   );
 }

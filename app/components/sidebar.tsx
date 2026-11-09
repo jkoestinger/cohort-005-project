@@ -4,6 +4,10 @@ import { cn } from "~/lib/utils";
 import { UserRole } from "~/db/schema";
 import { UserAvatar } from "~/components/user-avatar";
 import {
+  ProtoSidebarHeaderSlot,
+  ProtoSidebarNavSlot,
+} from "~/components/notifications-prototype"; // PROTOTYPE
+import {
   BookOpen,
   ChartColumn,
   LayoutDashboard,
@@ -140,9 +144,11 @@ export function Sidebar({
         <NavLink to="/" className="text-lg font-bold tracking-tight">
           Cadence
         </NavLink>
+        <ProtoSidebarHeaderSlot />
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
+        <ProtoSidebarNavSlot />
         {navItems
           .filter((item) => isVisible(item, currentUserRole))
           .map((item) => (
