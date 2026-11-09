@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { FeedItem } from "@knocklabs/client";
-import { CheckCircle2, ReceiptText, Ticket, UserPlus, XCircle } from "lucide-react";
+import { CheckCircle2, MessageSquare, ReceiptText, Reply, Ticket, UserPlus, XCircle } from "lucide-react";
 import { z } from "zod";
 
 // ─── What a Notification row says ───
@@ -39,11 +39,21 @@ const enrollmentCreatedSchema = z.object({
   url: z.string().startsWith("/"),
 });
 
+const discussionSchema = z.object({
+  kind: z.enum(["discussion_question", "discussion_reply"]),
+  actor_name: z.string(),
+  course_title: z.string(),
+  lesson_title: z.string(),
+  snippet: z.string(),
+  url: z.string().startsWith("/"),
+});
+
 const notificationDataSchema = z.discriminatedUnion("kind", [
   refundDecidedSchema,
   refundOpenedSchema,
   seatClaimedSchema,
   enrollmentCreatedSchema,
+  discussionSchema,
 ]);
 
 export type DescribedNotification = {
@@ -121,6 +131,30 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
           </>
         ),
         detail: null,
+        url: data.url,
+      };
+    case "discussion_question":
+      return {
+        icon: <MessageSquare className="size-4" />,
+        tone: "text-primary",
+        title: (
+          <>
+            {bold(data.actor_name)} asked a question on {bold(data.lesson_title)}
+          </>
+        ),
+        detail: data.snippet,
+        url: data.url,
+      };
+    case "discussion_reply":
+      return {
+        icon: <Reply className="size-4" />,
+        tone: "text-primary",
+        title: (
+          <>
+            {bold(data.actor_name)} replied to your question on {bold(data.lesson_title)}
+          </>
+        ),
+        detail: data.snippet,
         url: data.url,
       };
   }

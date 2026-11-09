@@ -1,10 +1,14 @@
 import { and, count, eq, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import { marked, type Token } from "marked";
 import { formatPrice } from "~/lib/utils";
 import {
+  comments,
   coupons,
   courses,
   enrollments,
+  lessons,
+  modules,
   purchases,
   refunds,
   RefundStatus,
@@ -254,5 +258,110 @@ export async function notifyEnrollmentCreated(
       url: `/instructor/${row.courseId}/students`,
     },
     idempotencyKey: `enrollment:${enrollmentId}:created`,
+  });
+}
+
+// ─── Discussions ───
+
+const SNIPPET_LENGTH = 140;
+
+/** The words of a markdown token, without its markup or any raw HTML. */
+function plainText(token: Token): string {
+  if (token.type === "html") return "";
+  if (token.type === "list") {
+    return token.items.map((item: Token) => plainText(item)).join(" ");
+  }
+  if ("tokens" in token && token.tokens) {
+    const separator = token.type === "blockquote" || token.type === "list_item" ? " " : "";
+    return token.tokens.map(plainText).join(separator);
+  }
+  return "text" in token ? token.text : "";
+}
+
+/** A comment body as one line of plain text, cut to fit a Feed row. */
+function snippetOf(markdown: string): string {
+  const text = marked
+    .lexer(markdown)
+    .map(plainText)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= SNIPPET_LENGTH) return text;
+  return `${text.slice(0, SNIPPET_LENGTH - 1).trimEnd()}…`;
+}
+
+function getUser(db: Db, userId: number) {
+  return db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+}
+
+/**
+ * Tells the course's Instructor about a new Discussion Question, or the
+ * Discussion Question's author about a new Discussion Reply. Nobody else in
+ * the thread is told. Call it after inserting a comment, never after an edit.
+ */
+export async function notifyCommentPosted(
+  db: Db,
+  notifier: Notifier,
+  commentId: number
+): Promise<void> {
+  const row = db
+    .select({
+      id: comments.id,
+      body: comments.body,
+      parentId: comments.parentId,
+      lessonId: lessons.id,
+      lessonTitle: lessons.title,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
+      instructorId: courses.instructorId,
+      author: { id: users.id, name: users.name, email: users.email },
+    })
+    .from(comments)
+    .innerJoin(users, eq(comments.userId, users.id))
+    .innerJoin(lessons, eq(comments.lessonId, lessons.id))
+    .innerJoin(modules, eq(lessons.moduleId, modules.id))
+    .innerJoin(courses, eq(modules.courseId, courses.id))
+    .where(eq(comments.id, commentId))
+    .get();
+  if (!row) return;
+
+  // A Discussion Question goes to the course's Instructor, a Discussion
+  // Reply to the Discussion Question's author.
+  const parentId = row.parentId;
+  const isReply = parentId !== null;
+  const recipientId = isReply
+    ? db
+        .select({ authorId: comments.userId })
+        .from(comments)
+        .where(eq(comments.id, parentId))
+        .get()?.authorId
+    : row.instructorId;
+  if (recipientId === undefined) return;
+  // The Instructor's own top-level comment isn't a Discussion Question, and
+  // a Discussion Question's author isn't told about replying to themselves.
+  if (recipientId === row.author.id) return;
+
+  const recipient = getUser(db, recipientId);
+  if (!recipient) return;
+
+  await send(notifier, {
+    workflow: isReply ? "discussion-reply-posted" : "discussion-question-posted",
+    recipients: [toRecipient(recipient)],
+    actor: toRecipient(row.author),
+    data: {
+      kind: isReply ? "discussion_reply" : "discussion_question",
+      // Top level, so a deleted comment's Notifications can be archived by it.
+      commentId: row.id,
+      actor_name: row.author.name,
+      course_title: row.courseTitle,
+      lesson_title: row.lessonTitle,
+      snippet: snippetOf(row.body),
+      url: `/courses/${row.courseSlug}/lessons/${row.lessonId}#comment-${row.id}`,
+    },
+    idempotencyKey: `comment:${row.id}:posted`,
   });
 }
