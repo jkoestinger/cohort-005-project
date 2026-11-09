@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { FeedItem } from "@knocklabs/client";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { CheckCircle2, ReceiptText, Ticket, UserPlus, XCircle } from "lucide-react";
 import { z } from "zod";
 
 // ─── What a Notification row says ───
@@ -15,7 +15,36 @@ const refundDecidedSchema = z.object({
   url: z.string().startsWith("/"),
 });
 
-const notificationDataSchema = z.discriminatedUnion("kind", [refundDecidedSchema]);
+const refundOpenedSchema = z.object({
+  kind: z.literal("refund_request_opened"),
+  actor_name: z.string(),
+  course_title: z.string(),
+  amount: z.string(),
+  reason: z.string(),
+  url: z.string().startsWith("/"),
+});
+
+const seatClaimedSchema = z.object({
+  kind: z.literal("seat_claimed"),
+  actor_name: z.string(),
+  course_title: z.string(),
+  seats_left: z.number().int().nonnegative(),
+  url: z.string().startsWith("/"),
+});
+
+const enrollmentCreatedSchema = z.object({
+  kind: z.literal("enrollment_created"),
+  actor_name: z.string(),
+  course_title: z.string(),
+  url: z.string().startsWith("/"),
+});
+
+const notificationDataSchema = z.discriminatedUnion("kind", [
+  refundDecidedSchema,
+  refundOpenedSchema,
+  seatClaimedSchema,
+  enrollmentCreatedSchema,
+]);
 
 export type DescribedNotification = {
   icon: ReactNode;
@@ -52,6 +81,46 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
         tone: "text-rose-600",
         title: <>Your Refund Request for {bold(data.course_title)} was declined</>,
         detail: data.note ? `${data.note} You can ask again.` : "You can ask again.",
+        url: data.url,
+      };
+    case "refund_request_opened":
+      return {
+        icon: <ReceiptText className="size-4" />,
+        tone: "text-amber-600",
+        title: (
+          <>
+            {bold(data.actor_name)} asked for a {data.amount} refund on{" "}
+            {bold(data.course_title)}
+          </>
+        ),
+        detail: data.reason,
+        url: data.url,
+      };
+    case "seat_claimed":
+      return {
+        icon: <Ticket className="size-4" />,
+        tone: "text-sky-600",
+        title: (
+          <>
+            {bold(data.actor_name)} claimed a Seat for {bold(data.course_title)}
+          </>
+        ),
+        detail:
+          data.seats_left === 0
+            ? "No Seats left."
+            : `${data.seats_left} ${data.seats_left === 1 ? "Seat" : "Seats"} left.`,
+        url: data.url,
+      };
+    case "enrollment_created":
+      return {
+        icon: <UserPlus className="size-4" />,
+        tone: "text-violet-600",
+        title: (
+          <>
+            {bold(data.actor_name)} enrolled in {bold(data.course_title)}
+          </>
+        ),
+        detail: null,
         url: data.url,
       };
   }
