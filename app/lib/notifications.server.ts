@@ -1,4 +1,4 @@
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import { marked, type Token } from "marked";
 import { formatPrice } from "~/lib/utils";
@@ -15,7 +15,7 @@ import {
   UserRole,
   users,
 } from "~/db/schema";
-import { getPurchaseKind, type Db } from "~/lib/refunds.server";
+import type { Db } from "~/lib/refunds.server";
 import type {
   ChannelPreference,
   Notifier,
@@ -61,17 +61,18 @@ async function send(notifier: Notifier, trigger: Trigger): Promise<void> {
 
 // ─── Refund Requests ───
 
-/** Tells every Platform Admin, other than the buyer, about a new Open Refund Request. */
-export async function notifyRefundRequestRaised(
-  db: Db,
-  notifier: Notifier,
-  refundRequestId: number
-): Promise<void> {
-  const row = db
+/** A Refund Request with its Purchase, buyer and course. */
+function loadRefundRequest(db: Db, refundRequestId: number) {
+  return db
     .select({
+      status: refunds.status,
       reason: refunds.reason,
+      note: refunds.decisionNote,
+      decidedBy: refunds.resolvedByUserId,
       amountPaid: purchases.amountPaid,
-      buyer: { id: users.id, name: users.name },
+      // A Team Licence is the Purchase that granted Seats.
+      isTeamLicence: sql<number>`exists (select 1 from ${coupons} where ${coupons.purchaseId} = ${purchases.id})`,
+      buyer: { id: users.id, name: users.name, email: users.email },
       courseTitle: courses.title,
     })
     .from(refunds)
@@ -80,7 +81,15 @@ export async function notifyRefundRequestRaised(
     .innerJoin(courses, eq(purchases.courseId, courses.id))
     .where(eq(refunds.id, refundRequestId))
     .get();
+}
 
+/** Tells every Platform Admin, other than the buyer, about a new Open Refund Request. */
+export async function notifyRefundRequestRaised(
+  db: Db,
+  notifier: Notifier,
+  refundRequestId: number
+): Promise<void> {
+  const row = loadRefundRequest(db, refundRequestId);
   if (!row) return;
 
   // Read at trigger time, so a newly promoted admin is included.
@@ -119,22 +128,7 @@ export async function notifyRefundRequestDecided(
   notifier: Notifier,
   refundRequestId: number
 ): Promise<void> {
-  const row = db
-    .select({
-      status: refunds.status,
-      purchaseId: refunds.purchaseId,
-      note: refunds.decisionNote,
-      decidedBy: refunds.resolvedByUserId,
-      buyer: { id: users.id, name: users.name, email: users.email },
-      courseTitle: courses.title,
-    })
-    .from(refunds)
-    .innerJoin(purchases, eq(refunds.purchaseId, purchases.id))
-    .innerJoin(users, eq(purchases.userId, users.id))
-    .innerJoin(courses, eq(purchases.courseId, courses.id))
-    .where(eq(refunds.id, refundRequestId))
-    .get();
-
+  const row = loadRefundRequest(db, refundRequestId);
   if (!row) return;
   const workflow = DECISIONS[row.status];
   if (!workflow) return;
@@ -148,10 +142,7 @@ export async function notifyRefundRequestDecided(
       course_title: row.courseTitle,
       ...(row.note ? { note: row.note } : {}),
       // Where the buyer sees their Refund Requests.
-      url:
-        getPurchaseKind(db, row.purchaseId) === "team_licence"
-          ? "/team"
-          : "/settings",
+      url: row.isTeamLicence ? "/team" : "/settings",
     },
     idempotencyKey: `refund:${refundRequestId}:${row.status}`,
   });

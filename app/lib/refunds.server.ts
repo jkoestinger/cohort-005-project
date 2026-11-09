@@ -89,10 +89,6 @@ function kindOf(seats: Seat[]): PurchaseKind {
   return seats.length > 0 ? "team_licence" : "individual_purchase";
 }
 
-export function getPurchaseKind(db: Queryable, purchaseId: number): PurchaseKind {
-  return kindOf(getSeats(db, purchaseId));
-}
-
 function getRefundRequestWithStatus(
   db: Queryable,
   purchaseId: number,
