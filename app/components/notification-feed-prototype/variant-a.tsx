@@ -2,8 +2,9 @@
 // Bell in the sidebar header, badge = UNSEEN count. Opening the popover marks
 // everything seen (badge clears) but leaves rows unread. Clicking a row marks
 // it read and navigates. Compact rows, one line of detail.
+// Footer link opens the full Notifications page (variant C's page): A + C merged.
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Bell, CheckCheck } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { UserAvatar } from "~/components/user-avatar";
@@ -96,6 +97,13 @@ export function VariantABell() {
               );
             })}
           </div>
+          <Link
+            to="/notifications"
+            onClick={() => setOpen(false)}
+            className="block border-t px-4 py-2.5 text-center text-sm font-medium text-primary hover:bg-accent"
+          >
+            View all Notifications
+          </Link>
         </div>
       )}
     </div>

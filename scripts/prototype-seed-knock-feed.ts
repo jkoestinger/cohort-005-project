@@ -114,3 +114,4 @@ for (const n of notifications) {
   });
   console.log(res.status, n.to, n.data.kind, res.ok ? "" : await res.text());
 }
+export {};
