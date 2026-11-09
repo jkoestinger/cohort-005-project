@@ -4,7 +4,6 @@ import { cn } from "~/lib/utils";
 import { UserRole } from "~/db/schema";
 import { UserAvatar } from "~/components/user-avatar";
 import { NotificationBell } from "~/components/notifications/notification-bell";
-import type { FeedAuth } from "~/lib/notification-feed.server";
 import {
   BookOpen,
   ChartColumn,
@@ -42,7 +41,6 @@ interface RecentCourse {
 interface SidebarProps {
   currentUser: CurrentUser | null;
   recentCourses?: RecentCourse[];
-  feedAuth?: FeedAuth | null;
   isTeamAdmin?: boolean;
 }
 
@@ -120,7 +118,6 @@ export function Sidebar({
   currentUser,
   recentCourses = [],
   isTeamAdmin = false,
-  feedAuth = null,
 }: SidebarProps) {
   const currentUserRole = currentUser?.role ?? null;
   const [isDark, setIsDark] = useState(false);
@@ -144,7 +141,7 @@ export function Sidebar({
         <NavLink to="/" className="text-lg font-bold tracking-tight">
           Cadence
         </NavLink>
-        <NotificationBell auth={feedAuth} />
+        <NotificationBell />
       </div>
 
       <nav className="flex-1 space-y-1 p-3">

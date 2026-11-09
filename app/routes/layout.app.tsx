@@ -2,6 +2,7 @@ import { Outlet } from "react-router";
 import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
+import { NotificationFeedProvider } from "~/components/notifications/notification-feed-provider";
 import { Toaster } from "sonner";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
@@ -232,15 +233,16 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        currentUser={currentUser}
-        recentCourses={recentCourses}
-        isTeamAdmin={userIsTeamAdmin}
-        feedAuth={feedAuth}
-      />
-      <main className="flex-1 overflow-y-auto">
-        <Outlet />
-      </main>
+      <NotificationFeedProvider auth={feedAuth}>
+        <Sidebar
+          currentUser={currentUser}
+          recentCourses={recentCourses}
+          isTeamAdmin={userIsTeamAdmin}
+        />
+        <main className="flex-1 overflow-y-auto">
+          <Outlet />
+        </main>
+      </NotificationFeedProvider>
       <DevUI
         users={users}
         currentUser={currentUser}
