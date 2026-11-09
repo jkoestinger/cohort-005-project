@@ -8,9 +8,10 @@ import { Button } from "~/components/ui/button";
 import { useFeed } from "~/components/notifications/notification-feed-provider";
 import { NotificationAvatar } from "~/components/notifications/notification-avatar";
 import {
-  describeNotification,
+  describeFeedItems,
   timeAgo,
 } from "~/components/notifications/describe-notification";
+import { UnreadDot } from "~/components/notifications/unread-dot";
 
 // ─── /notifications ───
 // Every Notification in a dense list, filterable by course, with the selected
@@ -49,10 +50,7 @@ export default function NotificationsPage() {
     );
   }
 
-  const rows = feed.items.flatMap((item) => {
-    const described = describeNotification(item);
-    return described ? [{ item, described }] : [];
-  });
+  const rows = describeFeedItems(feed.items);
   const courses = [...new Set(rows.map((row) => row.described.courseTitle))];
   const shown = rows.filter(
     (row) => course === ALL_COURSES || row.described.courseTitle === course
@@ -117,12 +115,7 @@ export default function NotificationsPage() {
                   <span className="shrink-0 text-xs font-normal text-muted-foreground">
                     {timeAgo(item.inserted_at)}
                   </span>
-                  {unread && (
-                    <span
-                      aria-label="Unread"
-                      className="size-2 shrink-0 rounded-full bg-primary"
-                    />
-                  )}
+                  {unread && <UnreadDot />}
                 </button>
               </li>
             );

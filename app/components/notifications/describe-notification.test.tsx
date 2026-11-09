@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { FeedItem } from "@knocklabs/client";
-import { badgeLabel, describeNotification } from "./describe-notification";
+import {
+  badgeLabel,
+  describeFeedItems,
+  describeNotification,
+} from "./describe-notification";
 
 function feedItem(data: Record<string, unknown>): FeedItem {
   return {
@@ -71,6 +75,27 @@ describe("describeNotification", () => {
     expect(
       describeNotification(feedItem({ ...data, note: "Most of it was watched." }))?.detail
     ).toBe("Most of it was watched. You can ask again.");
+  });
+
+  it("keeps the Feed items it can describe, in order, and drops the rest", () => {
+    const known = {
+      ...feedItem({
+        kind: "enrollment_created",
+        actor_name: "Ada",
+        course_title: "TS",
+        url: "/x",
+      }),
+      id: "msg_known",
+    };
+    const unknown = {
+      ...feedItem({ kind: "course_published", url: "/courses" }),
+      id: "msg_unknown",
+    };
+
+    const rows = describeFeedItems([unknown, known]);
+
+    expect(rows.map((row) => row.item.id)).toEqual(["msg_known"]);
+    expect(rows[0]?.described.actor).toBe("Ada");
   });
 
   it("skips a kind Cadence doesn't know", () => {

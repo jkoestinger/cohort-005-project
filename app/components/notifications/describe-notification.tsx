@@ -216,6 +216,16 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
   }
 }
 
+/** The Feed items Cadence can show, each with its row; unknown kinds are dropped. */
+export function describeFeedItems(
+  items: FeedItem[]
+): { item: FeedItem; described: DescribedNotification }[] {
+  return items.flatMap((item) => {
+    const described = describeNotification(item);
+    return described ? [{ item, described }] : [];
+  });
+}
+
 /** The bell's badge for this many unseen Notifications, or null for none. */
 export function badgeLabel(unseenCount: number): string | null {
   if (unseenCount <= 0) return null;

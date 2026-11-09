@@ -5,7 +5,8 @@ import { Bell, CheckCheck } from "lucide-react";
 import { cn } from "~/lib/utils";
 import { useFeed } from "./notification-feed-provider";
 import { NotificationAvatar } from "./notification-avatar";
-import { badgeLabel, describeNotification, timeAgo } from "./describe-notification";
+import { badgeLabel, describeFeedItems, timeAgo } from "./describe-notification";
+import { UnreadDot } from "./unread-dot";
 
 // ─── The bell ───
 // Sits next to "Cadence" in the sidebar header. The badge counts unseen
@@ -19,10 +20,7 @@ export function NotificationBell() {
 
   if (!feed.ready) return null;
 
-  const rows = feed.items.flatMap((item) => {
-    const described = describeNotification(item);
-    return described ? [{ item, described }] : [];
-  });
+  const rows = describeFeedItems(feed.items);
   const badge = badgeLabel(feed.unseenCount);
 
   function onOpenChange(next: boolean) {
@@ -100,12 +98,7 @@ export function NotificationBell() {
                       {timeAgo(item.inserted_at)}
                     </div>
                   </div>
-                  {unread && (
-                    <span
-                      aria-label="Unread"
-                      className="mt-1.5 size-2 shrink-0 rounded-full bg-primary"
-                    />
-                  )}
+                  {unread && <UnreadDot className="mt-1.5" />}
                 </button>
               );
             })}
