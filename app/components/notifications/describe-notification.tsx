@@ -10,23 +10,29 @@ import {
   XCircle,
 } from "lucide-react";
 import { z } from "zod";
+import type { NotificationKind } from "~/lib/notification-kinds";
 
 // ─── What a Notification row says ───
 // Rows are built in Cadence from each Notification's `data` (the data
 // contract in issue #28), not from Knock's rendered templates. Add a kind by
-// adding a schema to the union and a case to `describeNotification`.
+// adding it to NOTIFICATION_KINDS, a schema to the union and a case to
+// `describeNotification`; the type checker points at whichever is missing.
 
 const url = z.string().startsWith("/");
 
+/** A `kind` literal, checked against the kinds Cadence triggers. */
+function kind<K extends NotificationKind>(value: K) {
+  return z.literal(value);
+}
+
 const refundDecidedSchema = z.object({
-  kind: z.enum(["refund_request_approved", "refund_request_declined"]),
   course_title: z.string(),
   note: z.string().optional(),
   url,
 });
 
 const refundOpenedSchema = z.object({
-  kind: z.literal("refund_request_opened"),
+  kind: kind("refund_request_opened"),
   actor_name: z.string(),
   course_title: z.string(),
   amount: z.string(),
@@ -35,7 +41,7 @@ const refundOpenedSchema = z.object({
 });
 
 const seatClaimedSchema = z.object({
-  kind: z.literal("seat_claimed"),
+  kind: kind("seat_claimed"),
   actor_name: z.string(),
   course_title: z.string(),
   seats_left: z.number().int().nonnegative(),
@@ -43,14 +49,13 @@ const seatClaimedSchema = z.object({
 });
 
 const enrollmentCreatedSchema = z.object({
-  kind: z.literal("enrollment_created"),
+  kind: kind("enrollment_created"),
   actor_name: z.string(),
   course_title: z.string(),
   url,
 });
 
 const discussionSchema = z.object({
-  kind: z.enum(["discussion_question", "discussion_reply"]),
   commentId: z.number().int(),
   actor_name: z.string(),
   course_title: z.string(),
@@ -60,12 +65,26 @@ const discussionSchema = z.object({
 });
 
 const notificationDataSchema = z.discriminatedUnion("kind", [
-  refundDecidedSchema,
+  refundDecidedSchema.extend({ kind: kind("refund_request_approved") }),
+  refundDecidedSchema.extend({ kind: kind("refund_request_declined") }),
   refundOpenedSchema,
   seatClaimedSchema,
   enrollmentCreatedSchema,
-  discussionSchema,
+  discussionSchema.extend({ kind: kind("discussion_question") }),
+  discussionSchema.extend({ kind: kind("discussion_reply") }),
 ]);
+
+/**
+ * Fails to type-check while a kind Cadence triggers has no schema above, so
+ * its rows would be dropped as unknown.
+ */
+type EveryKindIsDescribed = [
+  Exclude<NotificationKind, z.infer<typeof notificationDataSchema>["kind"]>,
+] extends [never]
+  ? true
+  : never;
+const everyKindIsDescribed: EveryKindIsDescribed = true;
+void everyKindIsDescribed;
 
 export type DescribedNotification = {
   icon: ReactNode;
@@ -190,6 +209,10 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
         context: `${data.course_title} · ${data.lesson_title}`,
         url: data.url,
       };
+    default: {
+      const unhandled: never = data;
+      return unhandled;
+    }
   }
 }
 

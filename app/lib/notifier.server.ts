@@ -1,4 +1,8 @@
 import { Knock } from "@knocklabs/node";
+import type {
+  NotificationKind,
+  NotificationWorkflow,
+} from "~/lib/notification-kinds";
 
 // ─── The Notifier ───
 // The narrow port Cadence sends Notifications through. Knock delivers them when
@@ -17,11 +21,10 @@ export type Recipient = {
 };
 
 export type Trigger = {
-  /** The Knock workflow key, one per Notification. */
-  workflow: string;
+  workflow: NotificationWorkflow;
   recipients: Recipient[];
   actor?: Recipient;
-  data: Record<string, unknown>;
+  data: { kind: NotificationKind } & Record<string, unknown>;
   /** Built from the event, so a retried request doesn't notify twice. */
   idempotencyKey: string;
 };
@@ -50,7 +53,7 @@ export interface Notifier {
   /** Writes one workflow's Channels, leaving every other workflow as it is. */
   setPreference(
     userId: string,
-    workflow: string,
+    workflow: NotificationWorkflow,
     channels: ChannelPreference
   ): Promise<void>;
 }

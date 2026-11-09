@@ -26,6 +26,7 @@ import {
 import { defaultNotifier } from "~/lib/notifier.server";
 import { getFeedAuth } from "~/lib/notification-feed.server";
 import { Switch } from "~/components/ui/switch";
+import { NOTIFICATION_WORKFLOWS } from "~/lib/notification-kinds";
 
 const flag = z.enum(["true", "false"]).transform((value) => value === "true");
 
@@ -37,7 +38,7 @@ const settingsSchema = z.discriminatedUnion("intent", [
   }),
   z.object({
     intent: z.literal("set-notification-preference"),
-    workflow: z.string().min(1),
+    workflow: z.enum(NOTIFICATION_WORKFLOWS),
     notifyMe: flag,
     email: flag,
   }),

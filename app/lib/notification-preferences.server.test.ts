@@ -200,12 +200,6 @@ describe("setNotificationPreference", () => {
         email: false,
       })
     ).rejects.toThrow();
-    await expect(
-      setNotificationPreference(db, notifier, base.user.id, "no-such-workflow", {
-        notifyMe: false,
-        email: false,
-      })
-    ).rejects.toThrow();
 
     expect(notifier.preferences.size).toBe(0);
   });

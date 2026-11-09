@@ -22,6 +22,10 @@ import type {
   Recipient,
   Trigger,
 } from "~/lib/notifier.server";
+import {
+  NOTIFICATION_KINDS,
+  type NotificationWorkflow,
+} from "~/lib/notification-kinds";
 
 // ─── Notifications ───
 // Who is told about what. Each function is shaped like an event, takes the
@@ -104,17 +108,9 @@ export async function notifyRefundRequestRaised(
   });
 }
 
-const DECISIONS: Partial<
-  Record<RefundStatus, { workflow: string; kind: string }>
-> = {
-  [RefundStatus.Approved]: {
-    workflow: "refund-request-approved",
-    kind: "refund_request_approved",
-  },
-  [RefundStatus.Declined]: {
-    workflow: "refund-request-declined",
-    kind: "refund_request_declined",
-  },
+const DECISIONS: Partial<Record<RefundStatus, NotificationWorkflow>> = {
+  [RefundStatus.Approved]: "refund-request-approved",
+  [RefundStatus.Declined]: "refund-request-declined",
 };
 
 /** Tells the buyer their Refund Request was approved or declined. */
@@ -140,15 +136,15 @@ export async function notifyRefundRequestDecided(
     .get();
 
   if (!row) return;
-  const decision = DECISIONS[row.status];
-  if (!decision) return;
+  const workflow = DECISIONS[row.status];
+  if (!workflow) return;
   if (row.decidedBy === row.buyer.id) return;
 
   await send(notifier, {
-    workflow: decision.workflow,
+    workflow,
     recipients: [toRecipient(row.buyer)],
     data: {
-      kind: decision.kind,
+      kind: NOTIFICATION_KINDS[workflow],
       course_title: row.courseTitle,
       ...(row.note ? { note: row.note } : {}),
       // Where the buyer sees their Refund Requests.
@@ -171,7 +167,7 @@ export async function notifyRefundRequestDecided(
 type Person = { role: UserRole; ownsTeamLicence: boolean };
 
 type PreferenceRowDefinition = {
-  workflow: string;
+  workflow: NotificationWorkflow;
   label: string;
   /** What applies while the person has nothing stored. */
   defaults: ChannelPreference;
@@ -215,7 +211,7 @@ const PREFERENCE_ROWS: PreferenceRowDefinition[] = [
 ];
 
 export type NotificationPreferenceRow = {
-  workflow: string;
+  workflow: NotificationWorkflow;
   label: string;
   notifyMe: boolean;
   email: boolean;
@@ -271,7 +267,7 @@ export async function setNotificationPreference(
   db: Db,
   notifier: Notifier,
   userId: number,
-  workflow: string,
+  workflow: NotificationWorkflow,
   choice: { notifyMe: boolean; email: boolean }
 ): Promise<void> {
   const person = loadPerson(db, userId);
