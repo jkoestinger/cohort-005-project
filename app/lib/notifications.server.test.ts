@@ -7,7 +7,10 @@ import {
   declineRefundRequest,
   raiseRefundRequest,
 } from "./refunds.server";
-import { notifyRefundRequestDecided } from "./notifications.server";
+import {
+  notifyCommentPosted,
+  notifyRefundRequestDecided,
+} from "./notifications.server";
 import type { Notifier } from "./notifier.server";
 import { fakeNotifier } from "~/test/fake-notifier";
 
@@ -207,3 +210,171 @@ describe("notifyRefundRequestDecided", () => {
     logged.mockRestore();
   });
 });
+
+describe("notifyCommentPosted", () => {
+  let lesson: typeof schema.lessons.$inferSelect;
+
+  beforeEach(() => {
+    const module = db
+      .insert(schema.modules)
+      .values({ courseId: base.course.id, title: "Basics", position: 1 })
+      .returning()
+      .get();
+    lesson = db
+      .insert(schema.lessons)
+      .values({ moduleId: module.id, title: "Hooks", position: 1 })
+      .returning()
+      .get();
+  });
+
+  function post(userId: number, body: string, parentId: number | null = null) {
+    return db
+      .insert(schema.comments)
+      .values({ lessonId: lesson.id, userId, parentId, body })
+      .returning()
+      .get();
+  }
+
+  it("tells the course's Instructor about a Student's Discussion Question", async () => {
+    const question = post(base.user.id, "Why does useEffect run twice?");
+    const notifier = fakeNotifier();
+
+    await notifyCommentPosted(db, notifier, question.id);
+
+    expect(notifier.triggers).toEqual([
+      {
+        workflow: "discussion-question-posted",
+        recipients: [
+          {
+            id: String(base.instructor.id),
+            name: "Test Instructor",
+            email: "instructor@example.com",
+          },
+        ],
+        actor: { id: String(base.user.id), name: "Test User", email: "test@example.com" },
+        data: {
+          kind: "discussion_question",
+          commentId: question.id,
+          actor_name: "Test User",
+          course_title: "Test Course",
+          lesson_title: "Hooks",
+          snippet: "Why does useEffect run twice?",
+          url: `/courses/test-course/lessons/${lesson.id}#comment-${question.id}`,
+        },
+        idempotencyKey: `comment:${question.id}:posted`,
+      },
+    ]);
+  });
+
+  it("tells the Instructor about a Platform Admin's Discussion Question too", async () => {
+    const question = post(platformAdmin.id, "Is this still current?");
+    const notifier = fakeNotifier();
+
+    await notifyCommentPosted(db, notifier, question.id);
+
+    expect(notifier.triggers).toMatchObject([
+      {
+        workflow: "discussion-question-posted",
+        recipients: [{ id: String(base.instructor.id) }],
+        data: { actor_name: "Pat Admin" },
+      },
+    ]);
+  });
+
+  it("sends nothing for the Instructor's own top-level comment, which isn't a Discussion Question", async () => {
+    const comment = post(base.instructor.id, "Welcome to the lesson!");
+    const notifier = fakeNotifier();
+
+    await notifyCommentPosted(db, notifier, comment.id);
+
+    expect(notifier.triggers).toEqual([]);
+  });
+
+  it("tells only the Discussion Question's author about a Discussion Reply", async () => {
+    const question = post(base.user.id, "Why does useEffect run twice?");
+    const classmate = db
+      .insert(schema.users)
+      .values({ name: "Cleo Classmate", email: "cleo@example.com", role: UserRole.Student })
+      .returning()
+      .get();
+    post(classmate.id, "Same question here.", question.id);
+    const reply = post(base.instructor.id, "Strict Mode mounts it twice.", question.id);
+    const notifier = fakeNotifier();
+
+    await notifyCommentPosted(db, notifier, reply.id);
+
+    expect(notifier.triggers).toEqual([
+      {
+        workflow: "discussion-reply-posted",
+        recipients: [
+          { id: String(base.user.id), name: "Test User", email: "test@example.com" },
+        ],
+        actor: {
+          id: String(base.instructor.id),
+          name: "Test Instructor",
+          email: "instructor@example.com",
+        },
+        data: {
+          kind: "discussion_reply",
+          commentId: reply.id,
+          actor_name: "Test Instructor",
+          course_title: "Test Course",
+          lesson_title: "Hooks",
+          snippet: "Strict Mode mounts it twice.",
+          url: `/courses/test-course/lessons/${lesson.id}#comment-${reply.id}`,
+        },
+        idempotencyKey: `comment:${reply.id}:posted`,
+      },
+    ]);
+  });
+
+  it("sends nothing when the Discussion Question's author replies in their own thread", async () => {
+    const question = post(base.user.id, "Why does useEffect run twice?");
+    const reply = post(base.user.id, "Never mind, found it.", question.id);
+    const notifier = fakeNotifier();
+
+    await notifyCommentPosted(db, notifier, reply.id);
+
+    expect(notifier.triggers).toEqual([]);
+  });
+
+  it("snips the comment to plain text", async () => {
+    const question = post(
+      base.user.id,
+      "## Help\n\nWhy does **`useEffect`** run [twice](https://react.dev)?\n\n```ts\nuseEffect(() => {});\n```"
+    );
+    const notifier = fakeNotifier();
+
+    await notifyCommentPosted(db, notifier, question.id);
+
+    expect(notifier.triggers[0]?.data.snippet).toBe(
+      "Help Why does useEffect run twice? useEffect(() => {});"
+    );
+  });
+
+  it("truncates a long comment's snippet", async () => {
+    const question = post(base.user.id, `${"word ".repeat(100)}end`);
+    const notifier = fakeNotifier();
+
+    await notifyCommentPosted(db, notifier, question.id);
+
+    expect(notifier.triggers[0]?.data.snippet).toBe(`${"word ".repeat(27)}word…`);
+  });
+
+  it("logs a Notifier failure instead of throwing it", async () => {
+    const question = post(base.user.id, "Why does useEffect run twice?");
+    const failure = new Error("Knock is down");
+    const failing: Notifier = {
+      async trigger() {
+        throw failure;
+      },
+    };
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(notifyCommentPosted(db, failing, question.id)).resolves.toBeUndefined();
+
+    expect(logged).toHaveBeenCalledWith(expect.any(String), failure);
+    logged.mockRestore();
+  });
+});
+
