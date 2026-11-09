@@ -24,7 +24,7 @@ import {
   type NotificationPreferenceRow,
 } from "~/lib/notifications.server";
 import { defaultNotifier } from "~/lib/notifier.server";
-import { getFeedAuth } from "~/lib/notification-feed.server";
+import { isFeedConfigured } from "~/lib/notification-feed.server";
 import { Switch } from "~/components/ui/switch";
 import { NOTIFICATION_WORKFLOWS } from "~/lib/notification-kinds";
 
@@ -85,19 +85,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   };
 }
 
-/**
- * The Notifications section: hidden (null) while the Feed can't be
- * authenticated, "unavailable" when Knock can't be read right now.
- */
+/** What the Notifications section shows. */
+type NotificationPreferencesSection =
+  /** Knock isn't configured, so there are no Notifications to choose. */
+  | { status: "hidden" }
+  /** Knock can't be read right now. */
+  | { status: "unavailable" }
+  | { status: "ready"; rows: NotificationPreferenceRow[] };
+
 async function loadNotificationPreferences(
   userId: number
-): Promise<NotificationPreferenceRow[] | "unavailable" | null> {
-  if (!(await getFeedAuth(userId))) return null;
+): Promise<NotificationPreferencesSection> {
+  if (!isFeedConfigured()) return { status: "hidden" };
   try {
-    return await listNotificationPreferences(db, defaultNotifier(), userId);
+    const rows = await listNotificationPreferences(db, defaultNotifier(), userId);
+    return { status: "ready", rows };
   } catch (error) {
     console.error("[settings] Could not load Notification Preferences:", error);
-    return "unavailable";
+    return { status: "unavailable" };
   }
 }
 
@@ -296,7 +301,7 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </Card>
       )}
 
-      {notificationPreferences !== null && (
+      {notificationPreferences.status !== "hidden" && (
         <Card id="notifications" className="mt-8 max-w-md scroll-mt-6">
           <CardHeader>
             <h2 className="text-lg font-semibold">Notifications</h2>
@@ -306,14 +311,14 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
             </p>
           </CardHeader>
           <CardContent>
-            {notificationPreferences === "unavailable" ? (
+            {notificationPreferences.status === "unavailable" ? (
               <p className="text-sm text-muted-foreground">
                 Your Notification Preferences can't be loaded right now. Please
                 try again later.
               </p>
             ) : (
               <div className="divide-y">
-                {notificationPreferences.map((preference) => (
+                {notificationPreferences.rows.map((preference) => (
                   <NotificationPreferenceRowItem
                     key={preference.workflow}
                     preference={preference}

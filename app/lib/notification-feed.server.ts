@@ -32,6 +32,16 @@ export async function signFeedToken(userId: number): Promise<string | null> {
   }
 }
 
+/** Whether Knock is configured for the Feed: the keys and channel are set. */
+export function isFeedConfigured(): boolean {
+  return Boolean(
+    process.env.KNOCK_API_KEY &&
+      process.env.KNOCK_PUBLIC_API_KEY &&
+      process.env.KNOCK_FEED_CHANNEL_ID &&
+      process.env.KNOCK_SIGNING_KEY
+  );
+}
+
 /**
  * Everything the browser needs to read this user's Feed, or null when the
  * Feed can't be authenticated (Knock not configured). The bell hides on null.
@@ -39,9 +49,7 @@ export async function signFeedToken(userId: number): Promise<string | null> {
 export async function getFeedAuth(userId: number): Promise<FeedAuth | null> {
   const publicApiKey = process.env.KNOCK_PUBLIC_API_KEY;
   const feedChannelId = process.env.KNOCK_FEED_CHANNEL_ID;
-  if (!process.env.KNOCK_API_KEY || !publicApiKey || !feedChannelId) {
-    return null;
-  }
+  if (!isFeedConfigured() || !publicApiKey || !feedChannelId) return null;
 
   const userToken = await signFeedToken(userId);
   if (!userToken) return null;
