@@ -55,16 +55,17 @@ export interface Notifier {
   ): Promise<void>;
 }
 
-// Notifications are best effort: give up after a few seconds instead of the
-// SDK's default minute. The SDK keeps its own 2 retries; we write none.
-const KNOCK_TIMEOUT_MS = 5_000;
+// Notifications are best effort and the calls run inside a person's request:
+// one attempt, given up after 3 s, instead of the SDK's default minute and 2
+// retries. A missed Notification is logged; a slow page is felt.
+const KNOCK_TIMEOUT_MS = 3_000;
 
 /**
  * Delivers through Knock. Archiving needs the Feed's channel id; without one
  * there is no Feed to archive from, so archive calls are logged and dropped.
  */
 export function knockNotifier(apiKey: string, feedChannelId?: string): Notifier {
-  const knock = new Knock({ apiKey, timeout: KNOCK_TIMEOUT_MS });
+  const knock = new Knock({ apiKey, timeout: KNOCK_TIMEOUT_MS, maxRetries: 0 });
 
   return {
     async trigger({ workflow, recipients, actor, data, idempotencyKey }) {
