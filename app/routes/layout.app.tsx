@@ -5,6 +5,7 @@ import { DevUI } from "~/components/dev-ui";
 import { Toaster } from "sonner";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
+import { getFeedAuth } from "~/lib/notification-feed.server";
 import { eq, and, or, sql, desc } from "drizzle-orm";
 import { db } from "~/db";
 import {
@@ -213,6 +214,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    feedAuth: currentUser ? await getFeedAuth(currentUser.id) : null,
   };
 }
 
@@ -225,6 +227,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
+    feedAuth,
   } = loaderData;
 
   return (
@@ -233,6 +236,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        feedAuth={feedAuth}
       />
       <main className="flex-1 overflow-y-auto">
         <Outlet />
