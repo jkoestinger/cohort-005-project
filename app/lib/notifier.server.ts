@@ -89,8 +89,15 @@ export function knockNotifier(apiKey: string, feedChannelId?: string): Notifier 
     },
 
     async getPreferences(userId) {
-      const set = await knock.users.getPreferences(userId, PREFERENCE_SET);
-      return toStoredPreferences(set.workflows);
+      try {
+        const set = await knock.users.getPreferences(userId, PREFERENCE_SET);
+        return toStoredPreferences(set.workflows);
+      } catch (error) {
+        // Knock answers 404 for a user it has never seen (nothing triggered
+        // to them, nothing stored): they have nothing stored.
+        if (error instanceof Knock.NotFoundError) return {};
+        throw error;
+      }
     },
 
     async setPreference(userId, workflow, channels) {
