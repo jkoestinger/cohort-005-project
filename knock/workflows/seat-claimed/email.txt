@@ -1,0 +1,5 @@
+{{ data.actor_name }} claimed a Seat for {{ data.course_title }}.
+
+{% if data.seats_left == 0 %}No Seats left.{% elsif data.seats_left == 1 %}1 Seat left.{% else %}{{ data.seats_left }} Seats left.{% endif %}
+
+View in Cadence: {{ vars.app_url }}{{ data.url }}

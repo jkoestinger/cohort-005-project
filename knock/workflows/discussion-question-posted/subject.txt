@@ -1,0 +1,1 @@
+{{ data.actor_name }} asked a question on {{ data.lesson_title }}

@@ -24,6 +24,7 @@ import type {
   Trigger,
 } from "~/lib/notifier.server";
 import {
+  NOTIFICATION_DEFAULTS,
   NOTIFICATION_KINDS,
   type NotificationWorkflow,
 } from "~/lib/notification-kinds";
@@ -162,13 +163,11 @@ export async function notifyRefundRequestDecided(
 
 // ─── Notification Preferences ───
 // Which Notifications a person can get, and whether each reaches them at all
-// (Notify me, which is their Feed) and by email. Knock stores the choices; the
-// defaults live here too: for a user with nothing stored, Knock Development's
-// getPreferences returned `workflows: null` (checked Nov 2026), so it can't be
-// relied on to hand back the environment defaults.
-//
-// The `defaults` below MUST match Knock's environment default preference set,
-// which is what Knock applies when it delivers. #37 checks that they do.
+// (Notify me, which is their Feed) and by email. Knock stores the choices. The
+// defaults come from NOTIFICATION_DEFAULTS, not from Knock: for a user with
+// nothing stored, Knock Development's getPreferences returned `workflows: null`
+// (checked Nov 2026), so it can't be relied on to hand back the environment
+// defaults. `npm run knock:setup` writes the same table to Knock.
 
 /** Who a Notification can reach. */
 type Person = { role: UserRole; ownsTeamLicence: boolean };
@@ -181,38 +180,35 @@ type PreferenceRowDefinition = {
   canGet: (person: Person) => boolean;
 };
 
-const ON: ChannelPreference = { in_app_feed: true, email: true };
 const EVERYONE = () => true;
 
 // In the order /settings lists them.
 const PREFERENCE_ROWS: PreferenceRowDefinition[] = [
-  { workflow: "refund-request-approved", label: "Refund Request approved", defaults: ON, canGet: EVERYONE },
-  { workflow: "refund-request-declined", label: "Refund Request declined", defaults: ON, canGet: EVERYONE },
-  { workflow: "discussion-reply-posted", label: "Discussion Reply", defaults: ON, canGet: EVERYONE },
+  { workflow: "refund-request-approved", label: "Refund Request approved", defaults: NOTIFICATION_DEFAULTS["refund-request-approved"], canGet: EVERYONE },
+  { workflow: "refund-request-declined", label: "Refund Request declined", defaults: NOTIFICATION_DEFAULTS["refund-request-declined"], canGet: EVERYONE },
+  { workflow: "discussion-reply-posted", label: "Discussion Reply", defaults: NOTIFICATION_DEFAULTS["discussion-reply-posted"], canGet: EVERYONE },
   {
     workflow: "seat-claimed",
     label: "Seat claimed",
-    // A large Team Licence would flood the inbox.
-    defaults: { in_app_feed: true, email: false },
+    defaults: NOTIFICATION_DEFAULTS["seat-claimed"],
     canGet: (person) => person.ownsTeamLicence,
   },
   {
     workflow: "enrollment-created",
     label: "New Enrollment",
-    // Opt-in: a popular course would flood the Feed.
-    defaults: { in_app_feed: false, email: false },
+    defaults: NOTIFICATION_DEFAULTS["enrollment-created"],
     canGet: (person) => person.role === UserRole.Instructor,
   },
   {
     workflow: "discussion-question-posted",
     label: "New Discussion Question",
-    defaults: ON,
+    defaults: NOTIFICATION_DEFAULTS["discussion-question-posted"],
     canGet: (person) => person.role === UserRole.Instructor,
   },
   {
     workflow: "refund-request-opened",
     label: "New Open Refund Request",
-    defaults: ON,
+    defaults: NOTIFICATION_DEFAULTS["refund-request-opened"],
     canGet: (person) => person.role === UserRole.Admin,
   },
 ];

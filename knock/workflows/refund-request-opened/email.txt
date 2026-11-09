@@ -1,0 +1,5 @@
+{{ data.actor_name }} asked for a {{ data.amount }} refund on {{ data.course_title }}.
+
+{{ data.reason }}
+
+View in Cadence: {{ vars.app_url }}{{ data.url }}

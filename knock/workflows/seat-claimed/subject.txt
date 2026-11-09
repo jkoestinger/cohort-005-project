@@ -1,0 +1,1 @@
+{{ data.actor_name }} claimed a Seat for {{ data.course_title }}

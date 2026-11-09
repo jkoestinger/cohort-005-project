@@ -1,0 +1,5 @@
+Your Refund Request for {{ data.course_title }}{% if data.purchase_date %} (bought {{ data.purchase_date }}){% endif %} was approved.
+{% if data.note %}
+{{ data.note }}
+{% endif %}
+View in Cadence: {{ vars.app_url }}{{ data.url }}

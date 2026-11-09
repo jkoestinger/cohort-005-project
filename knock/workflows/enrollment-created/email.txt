@@ -1,0 +1,3 @@
+{{ data.actor_name }} enrolled in {{ data.course_title }}.
+
+View in Cadence: {{ vars.app_url }}{{ data.url }}

@@ -1,0 +1,5 @@
+{{ data.actor_name }} replied to your question on {{ data.lesson_title }} in {{ data.course_title }}.
+
+"{{ data.snippet }}"
+
+View in Cadence: {{ vars.app_url }}{{ data.url }}

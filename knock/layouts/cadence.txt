@@ -1,0 +1,7 @@
+Cadence
+
+{{ content }}
+
+---
+You got this email because of your Notification Preferences.
+Change what Cadence emails you: {{ vars.app_url }}/settings#notifications
