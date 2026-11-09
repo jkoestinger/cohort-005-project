@@ -26,6 +26,18 @@ export type Trigger = {
   idempotencyKey: string;
 };
 
+/** A person's choice for one Notification's Channels. */
+export type ChannelPreference = {
+  in_app_feed: boolean;
+  email: boolean;
+};
+
+/**
+ * What a person has stored, by workflow key. A workflow or Channel that is
+ * missing has nothing stored, so the caller falls back to its own default.
+ */
+export type StoredPreferences = Record<string, Partial<ChannelPreference>>;
+
 export interface Notifier {
   trigger(trigger: Trigger): Promise<void>;
   /**
@@ -34,6 +46,13 @@ export interface Notifier {
    * emails stay sent. Knock archives them shortly after the call returns.
    */
   archiveByCommentId(commentId: number): Promise<void>;
+  getPreferences(userId: string): Promise<StoredPreferences>;
+  /** Writes one workflow's Channels, leaving every other workflow as it is. */
+  setPreference(
+    userId: string,
+    workflow: string,
+    channels: ChannelPreference
+  ): Promise<void>;
 }
 
 // Notifications are best effort: give up after a few seconds instead of the
@@ -67,7 +86,50 @@ export function knockNotifier(apiKey: string, feedChannelId?: string): Notifier 
         trigger_data: JSON.stringify({ commentId }),
       });
     },
+
+    async getPreferences(userId) {
+      const set = await knock.users.getPreferences(userId, PREFERENCE_SET);
+      return toStoredPreferences(set.workflows);
+    },
+
+    async setPreference(userId, workflow, channels) {
+      await knock.users.setPreferences(userId, PREFERENCE_SET, {
+        // Knock replaces the whole set by default; merge touches one workflow.
+        __persistence_strategy__: "merge",
+        workflows: { [workflow]: { channel_types: channels } },
+      });
+    },
   };
+}
+
+/** Knock's default preference set, the only one Cadence uses. */
+const PREFERENCE_SET = "default";
+
+type KnockWorkflows = Awaited<
+  ReturnType<Knock["users"]["getPreferences"]>
+>["workflows"];
+
+// Knock stores a workflow as a boolean (every Channel) or as per-Channel
+// settings, where a Channel is a boolean or a set of conditions. Cadence only
+// writes booleans; anything else counts as nothing stored.
+function toStoredPreferences(workflows: KnockWorkflows): StoredPreferences {
+  const stored: StoredPreferences = {};
+  for (const [workflow, setting] of Object.entries(workflows ?? {})) {
+    if (typeof setting === "boolean") {
+      stored[workflow] = { in_app_feed: setting, email: setting };
+      continue;
+    }
+    const channels = setting.channel_types ?? {};
+    const preference: Partial<ChannelPreference> = {};
+    if (typeof channels.in_app_feed === "boolean") {
+      preference.in_app_feed = channels.in_app_feed;
+    }
+    if (typeof channels.email === "boolean") {
+      preference.email = channels.email;
+    }
+    stored[workflow] = preference;
+  }
+  return stored;
 }
 
 export function loggingNotifier(): Notifier {
@@ -80,6 +142,14 @@ export function loggingNotifier(): Notifier {
     async archiveByCommentId(commentId) {
       console.info(
         `[notifier] KNOCK_API_KEY is not set; did not archive comment ${commentId}.`
+      );
+    },
+    async getPreferences() {
+      return {};
+    },
+    async setPreference(userId, workflow) {
+      console.info(
+        `[notifier] KNOCK_API_KEY is not set; dropped the ${workflow} preference for user ${userId}.`
       );
     },
   };

@@ -8,14 +8,23 @@ import type { FeedAuth } from "~/lib/notification-feed.server";
 // (headless, real time over Knock's socket), authenticated with the user token
 // the app layout's loader signed. The token is swapped for a fresh one from
 // /api/notification-token a few minutes before it expires.
+// One connection per page: the layout opens it and shares it through
+// NotificationFeedProvider, so the bell and /notifications see the same state.
 
 export type NotificationFeed = {
   /** False until the first page arrives, and if Knock rejects the token. */
   ready: boolean;
   items: FeedItem[];
   unseenCount: number;
+  unreadCount: number;
+  totalCount: number;
+  /** True while Knock has older Notifications than the loaded ones. */
+  hasMore: boolean;
+  loadMore: () => void;
   markAsRead: (item: FeedItem) => void;
+  markAsUnread: (item: FeedItem) => void;
   markAllAsSeen: () => void;
+  markAllAsRead: () => void;
 };
 
 const REFRESH_BEFORE_EXPIRY_MS = 5 * 60 * 1000;
@@ -29,10 +38,24 @@ async function fetchFreshToken(): Promise<string | void> {
   return parsed.success ? parsed.data.userToken : undefined;
 }
 
+type FeedCounts = {
+  unseenCount: number;
+  unreadCount: number;
+  totalCount: number;
+  hasMore: boolean;
+};
+
+const NO_COUNTS: FeedCounts = {
+  unseenCount: 0,
+  unreadCount: 0,
+  totalCount: 0,
+  hasMore: false,
+};
+
 export function useNotificationFeed(auth: FeedAuth | null): NotificationFeed {
   const [ready, setReady] = useState(false);
   const [items, setItems] = useState<FeedItem[]>([]);
-  const [unseenCount, setUnseenCount] = useState(0);
+  const [counts, setCounts] = useState<FeedCounts>(NO_COUNTS);
   const feedRef = useRef<Feed | null>(null);
 
   // The layout's loader signs a new token every time it runs. Only the first
@@ -54,7 +77,7 @@ export function useNotificationFeed(auth: FeedAuth | null): NotificationFeed {
   useEffect(() => {
     setReady(false);
     setItems([]);
-    setUnseenCount(0);
+    setCounts(NO_COUNTS);
     const userToken = tokenRef.current;
     if (!userId || !publicApiKey || !feedChannelId || !userToken) return;
 
@@ -75,13 +98,18 @@ export function useNotificationFeed(auth: FeedAuth | null): NotificationFeed {
 
       const feed = knock.feeds.initialize(feedChannelId, {
         archived: "exclude",
-        page_size: 20,
+        page_size: 50,
       });
       feedRef.current = feed;
 
       const unsubscribe = feed.store.subscribe((state) => {
         setItems(state.items);
-        setUnseenCount(state.metadata.unseen_count);
+        setCounts({
+          unseenCount: state.metadata.unseen_count,
+          unreadCount: state.metadata.unread_count,
+          totalCount: state.metadata.total_count,
+          hasMore: Boolean(state.pageInfo.after),
+        });
       });
 
       feed.listenForUpdates();
@@ -104,13 +132,34 @@ export function useNotificationFeed(auth: FeedAuth | null): NotificationFeed {
     };
   }, [userId, publicApiKey, feedChannelId]);
 
+  const loadMore = useCallback(() => {
+    feedRef.current?.fetchNextPage();
+  }, []);
+
   const markAsRead = useCallback((item: FeedItem) => {
     if (!item.read_at) feedRef.current?.markAsRead(item);
+  }, []);
+
+  const markAsUnread = useCallback((item: FeedItem) => {
+    if (item.read_at) feedRef.current?.markAsUnread(item);
   }, []);
 
   const markAllAsSeen = useCallback(() => {
     feedRef.current?.markAllAsSeen();
   }, []);
 
-  return { ready, items, unseenCount, markAsRead, markAllAsSeen };
+  const markAllAsRead = useCallback(() => {
+    feedRef.current?.markAllAsRead();
+  }, []);
+
+  return {
+    ready,
+    items,
+    ...counts,
+    loadMore,
+    markAsRead,
+    markAsUnread,
+    markAllAsSeen,
+    markAllAsRead,
+  };
 }

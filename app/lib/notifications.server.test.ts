@@ -201,6 +201,7 @@ describe("notifyRefundRequestDecided", () => {
     approve(refundRequestId, platformAdmin.id, null);
     const failure = new Error("Knock is down");
     const failing: Notifier = {
+      ...fakeNotifier(),
       async trigger() {
         throw failure;
       },
@@ -310,6 +311,7 @@ describe("notifyRefundRequestRaised", () => {
     const refundRequestId = raise(buyForSelf(base.user.id).id, base.user.id);
     const failure = new Error("Knock is down");
     const failing: Notifier = {
+      ...fakeNotifier(),
       async trigger() {
         throw failure;
       },
@@ -543,6 +545,7 @@ describe("notifyEnrollmentCreated", () => {
 
 function failingNotifier(): Notifier {
   return {
+    ...fakeNotifier(),
     async trigger() {
       throw new Error("Knock is down");
     },
@@ -706,6 +709,7 @@ describe("notifyCommentPosted", () => {
     const question = post(base.user.id, "Why does useEffect run twice?");
     const failure = new Error("Knock is down");
     const failing: Notifier = {
+      ...fakeNotifier(),
       async trigger() {
         throw failure;
       },

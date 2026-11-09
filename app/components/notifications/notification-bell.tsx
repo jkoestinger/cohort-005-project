@@ -1,28 +1,29 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Popover } from "radix-ui";
-import { Bell } from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 import { cn } from "~/lib/utils";
-import type { FeedAuth } from "~/lib/notification-feed.server";
-import { useNotificationFeed } from "./use-notification-feed";
-import { describeNotification, timeAgo } from "./describe-notification";
+import { useFeed } from "./notification-feed-provider";
+import { NotificationAvatar } from "./notification-avatar";
+import { badgeLabel, describeNotification, timeAgo } from "./describe-notification";
 
 // ─── The bell ───
 // Sits next to "Cadence" in the sidebar header. The badge counts unseen
 // Notifications; the popover lists them, unread ones tinted with a dot.
 // Hidden when the Feed can't be authenticated.
 
-export function NotificationBell({ auth }: { auth: FeedAuth | null }) {
-  const feed = useNotificationFeed(auth);
+export function NotificationBell() {
+  const feed = useFeed();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
 
-  if (!auth || !feed.ready) return null;
+  if (!feed.ready) return null;
 
   const rows = feed.items.flatMap((item) => {
     const described = describeNotification(item);
     return described ? [{ item, described }] : [];
   });
+  const badge = badgeLabel(feed.unseenCount);
 
   function onOpenChange(next: boolean) {
     setOpen(next);
@@ -39,9 +40,9 @@ export function NotificationBell({ auth }: { auth: FeedAuth | null }) {
           className="relative ml-auto rounded-md p-1.5 text-sidebar-foreground/70 hover:bg-sidebar-accent"
         >
           <Bell className="size-5" />
-          {feed.unseenCount > 0 && (
+          {badge && (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
-              {feed.unseenCount > 9 ? "9+" : feed.unseenCount}
+              {badge}
             </span>
           )}
         </button>
@@ -53,8 +54,17 @@ export function NotificationBell({ auth }: { auth: FeedAuth | null }) {
           sideOffset={12}
           className="z-50 w-96 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-xl"
         >
-          <div className="border-b px-4 py-2.5 text-sm font-semibold">
-            Notifications
+          <div className="flex items-center justify-between border-b px-4 py-2.5">
+            <span className="text-sm font-semibold">Notifications</span>
+            <button
+              type="button"
+              onClick={feed.markAllAsRead}
+              disabled={feed.unreadCount === 0}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            >
+              <CheckCheck className="size-3.5" />
+              Mark all as read
+            </button>
           </div>
           <div className="max-h-[28rem] overflow-y-auto">
             {rows.length === 0 && (
@@ -78,14 +88,7 @@ export function NotificationBell({ auth }: { auth: FeedAuth | null }) {
                     unread && "bg-primary/5"
                   )}
                 >
-                  <div
-                    className={cn(
-                      "flex size-8 shrink-0 items-center justify-center rounded-full bg-muted",
-                      described.tone
-                    )}
-                  >
-                    {described.icon}
-                  </div>
+                  <NotificationAvatar notification={described} />
                   <div className="min-w-0 flex-1">
                     <div className="leading-snug">{described.title}</div>
                     {described.detail && (
@@ -107,6 +110,13 @@ export function NotificationBell({ auth }: { auth: FeedAuth | null }) {
               );
             })}
           </div>
+          <Link
+            to="/notifications"
+            onClick={() => setOpen(false)}
+            className="block border-t px-4 py-2.5 text-center text-sm font-medium text-primary hover:bg-accent"
+          >
+            View all Notifications
+          </Link>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
