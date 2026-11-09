@@ -112,3 +112,11 @@ _Avoid_: Alert, Message, Activity
 **Notification Feed**:
 The place inside Cadence where a person sees their Notifications.
 _Avoid_: Inbox, Activity feed
+
+**Channel**:
+A way a Notification reaches a person: the Notification Feed, or email. Every Notification a person gets lands in their Notification Feed; email is an extra Channel on top.
+_Avoid_: Medium, Transport
+
+**Notification Preference**:
+A person's choice of whether they get a given Notification, and whether it also reaches them by email.
+_Avoid_: Subscription, Notification setting
