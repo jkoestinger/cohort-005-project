@@ -77,6 +77,29 @@ describe("describeNotification", () => {
     ).toBe("Most of it was watched. You can ask again.");
   });
 
+  it("names the Purchase a Refund Request decision is about by its date", () => {
+    const approved = {
+      kind: "refund_request_approved",
+      course_title: "Intro to TypeScript",
+      purchase_date: "3 Mar 2026",
+      url: "/settings",
+    };
+    const declined = { ...approved, kind: "refund_request_declined" };
+
+    expect(describeNotification(feedItem(approved))?.detail).toBe("Bought 3 Mar 2026.");
+    expect(
+      describeNotification(feedItem({ ...approved, note: "Sorry it didn't work out." }))
+        ?.detail
+    ).toBe("Bought 3 Mar 2026. Sorry it didn't work out.");
+    expect(describeNotification(feedItem(declined))?.detail).toBe(
+      "Bought 3 Mar 2026. You can ask again."
+    );
+    expect(
+      describeNotification(feedItem({ ...declined, note: "Most of it was watched." }))
+        ?.detail
+    ).toBe("Bought 3 Mar 2026. Most of it was watched. You can ask again.");
+  });
+
   it("keeps the Feed items it can describe, in order, and drops the rest", () => {
     const known = {
       ...feedItem({

@@ -70,6 +70,7 @@ function loadRefundRequest(db: Db, refundRequestId: number) {
       note: refunds.decisionNote,
       decidedBy: refunds.resolvedByUserId,
       amountPaid: purchases.amountPaid,
+      purchasedAt: purchases.createdAt,
       // A Team Licence is the Purchase that granted Seats.
       isTeamLicence: sql<number>`exists (select 1 from ${coupons} where ${coupons.purchaseId} = ${purchases.id})`,
       buyer: { id: users.id, name: users.name, email: users.email },
@@ -117,6 +118,14 @@ export async function notifyRefundRequestRaised(
   });
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "3 Mar 2026": names a Purchase in a Notification. UTC, so it doesn't depend on the server. */
+function formatPurchaseDate(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
 const DECISIONS: Partial<Record<RefundStatus, NotificationWorkflow>> = {
   [RefundStatus.Approved]: "refund-request-approved",
   [RefundStatus.Declined]: "refund-request-declined",
@@ -140,6 +149,8 @@ export async function notifyRefundRequestDecided(
     data: {
       kind: NOTIFICATION_KINDS[workflow],
       course_title: row.courseTitle,
+      // Which Purchase, for a buyer who bought the course more than once.
+      purchase_date: formatPurchaseDate(row.purchasedAt),
       ...(row.note ? { note: row.note } : {}),
       // Where the buyer sees their Refund Requests.
       url: row.isTeamLicence ? "/team" : "/settings",

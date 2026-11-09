@@ -27,6 +27,8 @@ function kind<K extends NotificationKind>(value: K) {
 
 const refundDecidedSchema = z.object({
   course_title: z.string(),
+  // Optional: Notifications sent before it was added don't have it.
+  purchase_date: z.string().optional(),
   note: z.string().optional(),
   url,
 });
@@ -106,6 +108,14 @@ function bold(text: string) {
   return <strong className="font-semibold">{text}</strong>;
 }
 
+function boughtOn(purchaseDate: string | undefined) {
+  return purchaseDate ? `Bought ${purchaseDate}.` : undefined;
+}
+
+function joinSentences(...sentences: (string | undefined)[]) {
+  return sentences.filter(Boolean).join(" ");
+}
+
 /** What to show for a Feed item, or null for a kind Cadence doesn't know. */
 export function describeNotification(item: FeedItem): DescribedNotification | null {
   const parsed = notificationDataSchema.safeParse(item.data);
@@ -119,7 +129,7 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
         tone: "text-emerald-600",
         actor: null,
         title: <>Your Refund Request for {bold(data.course_title)} was approved</>,
-        detail: data.note ?? null,
+        detail: joinSentences(boughtOn(data.purchase_date), data.note) || null,
         courseTitle: data.course_title,
         context: data.course_title,
         url: data.url,
@@ -130,7 +140,7 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
         tone: "text-rose-600",
         actor: null,
         title: <>Your Refund Request for {bold(data.course_title)} was declined</>,
-        detail: data.note ? `${data.note} You can ask again.` : "You can ask again.",
+        detail: joinSentences(boughtOn(data.purchase_date), data.note, "You can ask again."),
         courseTitle: data.course_title,
         context: data.course_title,
         url: data.url,

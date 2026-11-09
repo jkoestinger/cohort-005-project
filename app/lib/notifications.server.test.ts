@@ -96,7 +96,7 @@ function decline(refundRequestId: number, deciderId: number, note: string) {
 }
 
 describe("notifyRefundRequestDecided", () => {
-  it("tells the buyer of an Individual Purchase their Refund Request was approved", async () => {
+  it("tells the buyer of an Individual Purchase their Refund Request was approved, naming the Purchase by date", async () => {
     const purchase = buyForSelf(base.user.id);
     const refundRequestId = raise(purchase.id, base.user.id);
     approve(refundRequestId, platformAdmin.id, "Sorry it didn't work out.");
@@ -113,6 +113,7 @@ describe("notifyRefundRequestDecided", () => {
         data: {
           kind: "refund_request_approved",
           course_title: "Test Course",
+          purchase_date: "6 Oct 2026",
           note: "Sorry it didn't work out.",
           url: "/settings",
         },
@@ -138,6 +139,7 @@ describe("notifyRefundRequestDecided", () => {
         data: {
           kind: "refund_request_declined",
           course_title: "Test Course",
+          purchase_date: "6 Oct 2026",
           note: "You have watched most of it.",
           url: "/settings",
         },
@@ -157,6 +159,7 @@ describe("notifyRefundRequestDecided", () => {
     expect(notifier.triggers[0]?.data).toEqual({
       kind: "refund_request_approved",
       course_title: "Test Course",
+      purchase_date: "6 Oct 2026",
       url: "/settings",
     });
   });
