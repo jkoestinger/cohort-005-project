@@ -3,6 +3,15 @@
 // (a single in-app feed step). Run: npx tsx --env-file=.env scripts/prototype-seed-knock-feed.ts
 const WORKFLOW = "prototype-feed";
 
+// Knock silently skips recipients it has never seen (the trigger still
+// returns 200), so identify each one inline by passing an object, not an id.
+const NAMES: Record<string, string> = {
+  "1": "Alex Rivera",
+  "2": "Sarah Chen",
+  "5": "Emma Wilson",
+  "10": "Bossy McBossface",
+};
+
 const notifications: { to: string; data: Record<string, unknown> }[] = [
   // Sarah Chen (2), Instructor of Introduction to TypeScript
   {
@@ -98,7 +107,10 @@ for (const n of notifications) {
       Authorization: `Bearer ${process.env.KNOCK_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ recipients: [n.to], data: n.data }),
+    body: JSON.stringify({
+      recipients: [{ id: n.to, name: NAMES[n.to] }],
+      data: n.data,
+    }),
   });
   console.log(res.status, n.to, n.data.kind, res.ok ? "" : await res.text());
 }
