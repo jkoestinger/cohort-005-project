@@ -17,11 +17,31 @@ import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
+import {
+  listNotificationPreferences,
+  setNotificationPreference,
+  UnknownNotificationPreferenceError,
+  type NotificationPreferenceRow,
+} from "~/lib/notifications.server";
+import { defaultNotifier } from "~/lib/notifier.server";
+import { getFeedAuth } from "~/lib/notification-feed.server";
+import { Switch } from "~/components/ui/switch";
 
-const settingsSchema = z.object({
-  name: z.string().trim().min(1, "Name cannot be empty."),
-  bio: z.string().trim().optional(),
-});
+const flag = z.enum(["true", "false"]).transform((value) => value === "true");
+
+const settingsSchema = z.discriminatedUnion("intent", [
+  z.object({
+    intent: z.literal("update-profile"),
+    name: z.string().trim().min(1, "Name cannot be empty."),
+    bio: z.string().trim().optional(),
+  }),
+  z.object({
+    intent: z.literal("set-notification-preference"),
+    workflow: z.string().min(1),
+    notifyMe: flag,
+    email: flag,
+  }),
+]);
 
 export function meta() {
   return [
@@ -52,6 +72,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const refundRequests = listRefundRequestsForBuyer(db, currentUserId);
 
   return {
+    notificationPreferences: await loadNotificationPreferences(currentUserId),
     user: {
       id: currentUser.id,
       name: currentUser.name,
@@ -61,6 +82,22 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
     refundRequests,
   };
+}
+
+/**
+ * The Notifications section: hidden (null) while the Feed can't be
+ * authenticated, "unavailable" when Knock can't be read right now.
+ */
+async function loadNotificationPreferences(
+  userId: number
+): Promise<NotificationPreferenceRow[] | "unavailable" | null> {
+  if (!(await getFeedAuth(userId))) return null;
+  try {
+    return await listNotificationPreferences(db, defaultNotifier(), userId);
+  } catch (error) {
+    console.error("[settings] Could not load Notification Preferences:", error);
+    return "unavailable";
+  }
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -86,6 +123,27 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ errors: parsed.errors }, { status: 400 });
   }
 
+  if (parsed.data.intent === "set-notification-preference") {
+    const { workflow, notifyMe, email } = parsed.data;
+    try {
+      await setNotificationPreference(db, defaultNotifier(), currentUser.id, workflow, {
+        notifyMe,
+        email,
+      });
+    } catch (error) {
+      if (error instanceof UnknownNotificationPreferenceError) {
+        throw data(error.message, { status: 400 });
+      }
+      // Knock is unreachable: the person can flip the toggle again.
+      console.error("[settings] Could not save a Notification Preference:", error);
+      return data(
+        { preferenceError: "Couldn't save that. Please try again." },
+        { status: 502 }
+      );
+    }
+    return { preferenceSaved: true };
+  }
+
   const { name, bio } = parsed.data;
 
   db
@@ -98,7 +156,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Settings({ loaderData }: Route.ComponentProps) {
-  const { user, refundRequests } = loaderData;
+  const { user, refundRequests, notificationPreferences } = loaderData;
   const openCount = refundRequests.filter(
     (refundRequest) => refundRequest.status === RefundStatus.Open
   ).length;
@@ -139,6 +197,7 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </CardHeader>
         <CardContent>
           <fetcher.Form method="post" className="space-y-4">
+            <input type="hidden" name="intent" value="update-profile" />
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
               <Input
@@ -235,6 +294,105 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
           </CardContent>
         </Card>
       )}
+
+      {notificationPreferences !== null && (
+        <Card id="notifications" className="mt-8 max-w-md scroll-mt-6">
+          <CardHeader>
+            <h2 className="text-lg font-semibold">Notifications</h2>
+            <p className="text-sm text-muted-foreground">
+              Choose which Notifications you get, and which also reach you by
+              email.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {notificationPreferences === "unavailable" ? (
+              <p className="text-sm text-muted-foreground">
+                Your Notification Preferences can't be loaded right now. Please
+                try again later.
+              </p>
+            ) : (
+              <div className="divide-y">
+                {notificationPreferences.map((preference) => (
+                  <NotificationPreferenceRowItem
+                    key={preference.workflow}
+                    preference={preference}
+                  />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/** One Notification's toggles. Each flip saves straight away. */
+function NotificationPreferenceRowItem({
+  preference,
+}: {
+  preference: NotificationPreferenceRow;
+}) {
+  const fetcher = useFetcher<typeof action>();
+
+  // Show the choice being saved until the loader has the stored one.
+  const pending = fetcher.formData;
+  const notifyMe = pending
+    ? pending.get("notifyMe") === "true"
+    : preference.notifyMe;
+  const email = pending ? pending.get("email") === "true" : preference.email;
+
+  useEffect(() => {
+    if (
+      fetcher.state === "idle" &&
+      fetcher.data &&
+      "preferenceError" in fetcher.data
+    ) {
+      toast.error(fetcher.data.preferenceError);
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  function save(next: { notifyMe: boolean; email: boolean }) {
+    fetcher.submit(
+      {
+        intent: "set-notification-preference",
+        workflow: preference.workflow,
+        notifyMe: String(next.notifyMe),
+        email: String(next.notifyMe && next.email),
+      },
+      { method: "post" }
+    );
+  }
+
+  const notifyMeId = `notify-me-${preference.workflow}`;
+  const emailId = `email-${preference.workflow}`;
+
+  return (
+    <div className="flex items-center justify-between gap-4 py-3">
+      <span className="text-sm font-medium">{preference.label}</span>
+      <div className="flex shrink-0 items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Switch
+            id={notifyMeId}
+            checked={notifyMe}
+            onCheckedChange={(checked) => save({ notifyMe: checked, email })}
+          />
+          <Label htmlFor={notifyMeId} className="font-normal">
+            Notify me
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            id={emailId}
+            checked={email}
+            disabled={!notifyMe}
+            onCheckedChange={(checked) => save({ notifyMe, email: checked })}
+          />
+          <Label htmlFor={emailId} className="font-normal">
+            Email
+          </Label>
+        </div>
+      </div>
     </div>
   );
 }
