@@ -502,7 +502,7 @@ export async function notifyCommentPosted(
  * link to it. Notifications about other comments in the thread stay, and sent
  * emails stay sent. Call it once, right after the soft delete.
  */
-export async function notifyCommentDeleted(
+export async function archiveCommentNotifications(
   db: Db,
   notifier: Notifier,
   commentId: number

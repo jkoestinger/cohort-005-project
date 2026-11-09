@@ -9,7 +9,7 @@ import {
   raiseRefundRequest,
 } from "./refunds.server";
 import {
-  notifyCommentDeleted,
+  archiveCommentNotifications,
   notifyCommentPosted,
   notifyEnrollmentCreated,
   notifyRefundRequestDecided,
@@ -726,7 +726,7 @@ describe("notifyCommentPosted", () => {
   });
 });
 
-describe("notifyCommentDeleted", () => {
+describe("archiveCommentNotifications", () => {
   let lesson: typeof schema.lessons.$inferSelect;
 
   beforeEach(() => {
@@ -762,7 +762,7 @@ describe("notifyCommentDeleted", () => {
     softDelete(question.id);
     const notifier = fakeNotifier();
 
-    await notifyCommentDeleted(db, notifier, question.id);
+    await archiveCommentNotifications(db, notifier, question.id);
 
     expect(notifier.archivedCommentIds).toEqual([question.id]);
   });
@@ -773,7 +773,7 @@ describe("notifyCommentDeleted", () => {
     softDelete(question.id);
     const notifier = fakeNotifier();
 
-    await notifyCommentDeleted(db, notifier, question.id);
+    await archiveCommentNotifications(db, notifier, question.id);
 
     expect(notifier.archivedCommentIds).toEqual([question.id]);
   });
@@ -782,7 +782,7 @@ describe("notifyCommentDeleted", () => {
     const question = post(base.user.id);
     const notifier = fakeNotifier();
 
-    await notifyCommentDeleted(db, notifier, question.id);
+    await archiveCommentNotifications(db, notifier, question.id);
 
     expect(notifier.archivedCommentIds).toEqual([]);
   });
@@ -793,7 +793,7 @@ describe("notifyCommentDeleted", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(
-      notifyCommentDeleted(db, failingNotifier(), question.id)
+      archiveCommentNotifications(db, failingNotifier(), question.id)
     ).resolves.toBeUndefined();
 
     expect(logged).toHaveBeenCalled();
