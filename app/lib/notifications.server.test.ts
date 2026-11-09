@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { eq } from "drizzle-orm";
 import { createTestDb, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { UserRole } from "~/db/schema";
@@ -10,6 +11,7 @@ import {
 import {
   notifyCommentPosted,
   notifyRefundRequestDecided,
+  notifyRefundRequestRaised,
 } from "./notifications.server";
 import type { Notifier } from "./notifier.server";
 import { fakeNotifier } from "~/test/fake-notifier";
@@ -204,6 +206,112 @@ describe("notifyRefundRequestDecided", () => {
 
     await expect(
       notifyRefundRequestDecided(db, failing, refundRequestId)
+    ).resolves.toBeUndefined();
+
+    expect(logged).toHaveBeenCalledWith(expect.any(String), failure);
+    logged.mockRestore();
+  });
+});
+
+describe("notifyRefundRequestRaised", () => {
+  it("tells every Platform Admin about a new Open Refund Request", async () => {
+    const secondAdmin = db
+      .insert(schema.users)
+      .values({ name: "Sam Admin", email: "sam@example.com", role: UserRole.Admin })
+      .returning()
+      .get();
+    const purchase = buyForSelf(base.user.id);
+    const refundRequestId = raise(purchase.id, base.user.id);
+    const notifier = fakeNotifier();
+
+    await notifyRefundRequestRaised(db, notifier, refundRequestId);
+
+    expect(notifier.triggers).toEqual([
+      {
+        workflow: "refund-request-opened",
+        recipients: expect.arrayContaining([
+          { id: String(platformAdmin.id), name: "Pat Admin", email: "pat@example.com" },
+          { id: String(secondAdmin.id), name: "Sam Admin", email: "sam@example.com" },
+        ]),
+        data: {
+          kind: "refund_request_opened",
+          actor_name: "Test User",
+          course_title: "Test Course",
+          amount: "$79.00",
+          reason: "Not for me",
+          url: "/admin/refunds",
+        },
+        idempotencyKey: `refund:${refundRequestId}:opened`,
+      },
+    ]);
+    expect(notifier.triggers[0]?.recipients).toHaveLength(2);
+  });
+
+  it("leaves out a Platform Admin who raised it on their own Purchase", async () => {
+    const otherAdmin = db
+      .insert(schema.users)
+      .values({ name: "Sam Admin", email: "sam@example.com", role: UserRole.Admin })
+      .returning()
+      .get();
+    const purchase = buyForSelf(platformAdmin.id);
+    const refundRequestId = raise(purchase.id, platformAdmin.id);
+    const notifier = fakeNotifier();
+
+    await notifyRefundRequestRaised(db, notifier, refundRequestId);
+
+    expect(notifier.triggers).toMatchObject([
+      {
+        recipients: [
+          { id: String(otherAdmin.id), name: "Sam Admin", email: "sam@example.com" },
+        ],
+        data: { actor_name: "Pat Admin" },
+      },
+    ]);
+  });
+
+  it("triggers nothing when the buyer is the only Platform Admin", async () => {
+    const purchase = buyForSelf(platformAdmin.id);
+    const refundRequestId = raise(purchase.id, platformAdmin.id);
+    const notifier = fakeNotifier();
+
+    await notifyRefundRequestRaised(db, notifier, refundRequestId);
+
+    expect(notifier.triggers).toEqual([]);
+  });
+
+  it("includes a user promoted to admin since the last Notification", async () => {
+    const notifier = fakeNotifier();
+    const first = raise(buyForSelf(base.user.id).id, base.user.id);
+    await notifyRefundRequestRaised(db, notifier, first);
+    approve(first, platformAdmin.id, null);
+
+    db.update(schema.users)
+      .set({ role: UserRole.Admin })
+      .where(eq(schema.users.id, base.instructor.id))
+      .run();
+    const second = raise(buyForSelf(base.user.id).id, base.user.id);
+    await notifyRefundRequestRaised(db, notifier, second);
+
+    expect(notifier.triggers[1]?.recipients).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: String(base.instructor.id) }),
+      ])
+    );
+    expect(notifier.triggers[1]?.recipients).toHaveLength(2);
+  });
+
+  it("logs a Notifier failure instead of throwing it", async () => {
+    const refundRequestId = raise(buyForSelf(base.user.id).id, base.user.id);
+    const failure = new Error("Knock is down");
+    const failing: Notifier = {
+      async trigger() {
+        throw failure;
+      },
+    };
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      notifyRefundRequestRaised(db, failing, refundRequestId)
     ).resolves.toBeUndefined();
 
     expect(logged).toHaveBeenCalledWith(expect.any(String), failure);
