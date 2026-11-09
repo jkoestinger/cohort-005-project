@@ -1,4 +1,14 @@
-import { Outlet } from "react-router";
+import { Outlet, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { getKnockFeedConfig } from "~/lib/knock-feed.prototype.server";
+import {
+  KnockFeedProvider,
+  useFeed,
+} from "~/components/notification-feed-prototype/use-knock-feed";
+import { VariantABell } from "~/components/notification-feed-prototype/variant-a";
+import { VariantBDrawer } from "~/components/notification-feed-prototype/variant-b";
+import { VariantCNavItem } from "~/components/notification-feed-prototype/variant-c";
+import { PrototypeSwitcher } from "~/components/prototype-switcher";
 import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
@@ -213,6 +223,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    knockFeed: await getKnockFeedConfig(currentUserId),
   };
 }
 
@@ -225,14 +236,32 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
+    knockFeed,
   } = loaderData;
 
+  // PROTOTYPE: Notification Feed variants, see variant-*.tsx
+  const [searchParams] = useSearchParams();
+  const [stored, setStored] = useState("A");
+  useEffect(() => {
+    setStored(localStorage.getItem("prototype-variant") ?? "A");
+  }, [searchParams]);
+  const variant = searchParams.get("variant") ?? stored;
+
   return (
+    <KnockFeedProvider config={knockFeed}>
     <div className="flex h-screen overflow-hidden">
       <Sidebar
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        headerSlot={knockFeed && variant === "A" ? <VariantABell /> : null}
+        navSlot={
+          !knockFeed ? null : variant === "B" ? (
+            <VariantBDrawer />
+          ) : variant === "C" ? (
+            <VariantCNavItem />
+          ) : null
+        }
       />
       <main className="flex-1 overflow-y-auto">
         <Outlet />
@@ -245,6 +274,26 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countries={countries}
       />
       <Toaster position="bottom-right" richColors closeButton />
+      <PrototypeSwitcher
+        variants={[
+          { key: "A", name: "Bell popover" },
+          { key: "B", name: "Right drawer" },
+          { key: "C", name: "Notifications page" },
+        ]}
+        current={variant}
+        info={<FeedStateReadout />}
+      />
     </div>
+    </KnockFeedProvider>
+  );
+}
+
+function FeedStateReadout() {
+  const f = useFeed();
+  if (f.error) return <span className="text-rose-300">knock: {f.error}</span>;
+  return (
+    <>
+      unseen {f.unseenCount} · unread {f.unreadCount} · total {f.totalCount} · last: {f.lastAction}
+    </>
   );
 }

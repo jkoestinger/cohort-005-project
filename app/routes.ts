@@ -45,6 +45,8 @@ export default [
     route("admin/categories", "routes/admin.categories.tsx"),
     route("admin/refunds", "routes/admin.refunds.tsx"),
     route("settings", "routes/settings.tsx"),
+    // PROTOTYPE: Notification Feed variant C
+    route("notifications", "routes/notifications.prototype.tsx"),
     route("team", "routes/team.tsx"),
     route("redeem/:code", "routes/redeem.$code.tsx"),
   ]),
