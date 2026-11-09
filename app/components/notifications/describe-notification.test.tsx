@@ -111,28 +111,30 @@ describe("describeNotification", () => {
     };
 
     expect(title(data)).toBe(
-      '<strong class="font-semibold">Grace Hopper</strong> claimed a Seat on <strong class="font-semibold">Intro to TypeScript</strong>'
+      '<strong class="font-semibold">Grace Hopper</strong> claimed a Seat for <strong class="font-semibold">Intro to TypeScript</strong>'
     );
     expect(describeNotification(feedItem(data))).toMatchObject({
       actor: "Grace Hopper",
-      detail: "3 Seats left",
+      detail: "3 Seats left.",
       courseTitle: "Intro to TypeScript",
       url: "/team",
     });
   });
 
-  it("says Seat, not Seats, when one is left", () => {
-    const described = describeNotification(
-      feedItem({
-        kind: "seat_claimed",
-        actor_name: "Grace Hopper",
-        course_title: "Intro to TypeScript",
-        seats_left: 1,
-        url: "/team",
-      })
-    );
+  it("says Seat, not Seats, when one is left, and none when the last is claimed", () => {
+    const seatClaimed = (seatsLeft: number) =>
+      describeNotification(
+        feedItem({
+          kind: "seat_claimed",
+          actor_name: "Grace Hopper",
+          course_title: "Intro to TypeScript",
+          seats_left: seatsLeft,
+          url: "/team",
+        })
+      )?.detail;
 
-    expect(described?.detail).toBe("1 Seat left");
+    expect(seatClaimed(1)).toBe("1 Seat left.");
+    expect(seatClaimed(0)).toBe("No Seats left.");
   });
 
   it("describes a new Enrollment, with no detail line", () => {

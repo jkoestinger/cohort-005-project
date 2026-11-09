@@ -2,10 +2,10 @@ import type { ReactNode } from "react";
 import type { FeedItem } from "@knocklabs/client";
 import {
   CheckCircle2,
-  GraduationCap,
   MessageSquare,
-  Receipt,
+  ReceiptText,
   Reply,
+  Ticket,
   UserPlus,
   XCircle,
 } from "lucide-react";
@@ -117,7 +117,7 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
       };
     case "refund_request_opened":
       return {
-        icon: <Receipt className="size-4" />,
+        icon: <ReceiptText className="size-4" />,
         tone: "text-amber-600",
         actor: data.actor_name,
         title: (
@@ -133,22 +133,25 @@ export function describeNotification(item: FeedItem): DescribedNotification | nu
       };
     case "seat_claimed":
       return {
-        icon: <UserPlus className="size-4" />,
+        icon: <Ticket className="size-4" />,
         tone: "text-sky-600",
         actor: data.actor_name,
         title: (
           <>
-            {bold(data.actor_name)} claimed a Seat on {bold(data.course_title)}
+            {bold(data.actor_name)} claimed a Seat for {bold(data.course_title)}
           </>
         ),
-        detail: `${data.seats_left} ${data.seats_left === 1 ? "Seat" : "Seats"} left`,
+        detail:
+          data.seats_left === 0
+            ? "No Seats left."
+            : `${data.seats_left} ${data.seats_left === 1 ? "Seat" : "Seats"} left.`,
         courseTitle: data.course_title,
         context: data.course_title,
         url: data.url,
       };
     case "enrollment_created":
       return {
-        icon: <GraduationCap className="size-4" />,
+        icon: <UserPlus className="size-4" />,
         tone: "text-violet-600",
         actor: data.actor_name,
         title: (

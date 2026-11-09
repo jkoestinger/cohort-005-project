@@ -1,5 +1,16 @@
-import { eq } from "drizzle-orm";
-import { courses, purchases, refunds, RefundStatus, users } from "~/db/schema";
+import { and, count, eq, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
+import { formatPrice } from "~/lib/utils";
+import {
+  coupons,
+  courses,
+  enrollments,
+  purchases,
+  refunds,
+  RefundStatus,
+  UserRole,
+  users,
+} from "~/db/schema";
 import { getPurchaseKind, type Db } from "~/lib/refunds.server";
 import type { Notifier, Recipient, Trigger } from "~/lib/notifier.server";
 
@@ -36,6 +47,53 @@ async function send(notifier: Notifier, trigger: Trigger): Promise<void> {
 }
 
 // ─── Refund Requests ───
+
+/** Tells every Platform Admin, other than the buyer, about a new Open Refund Request. */
+export async function notifyRefundRequestRaised(
+  db: Db,
+  notifier: Notifier,
+  refundRequestId: number
+): Promise<void> {
+  const row = db
+    .select({
+      reason: refunds.reason,
+      amountPaid: purchases.amountPaid,
+      buyer: { id: users.id, name: users.name },
+      courseTitle: courses.title,
+    })
+    .from(refunds)
+    .innerJoin(purchases, eq(refunds.purchaseId, purchases.id))
+    .innerJoin(users, eq(purchases.userId, users.id))
+    .innerJoin(courses, eq(purchases.courseId, courses.id))
+    .where(eq(refunds.id, refundRequestId))
+    .get();
+
+  if (!row) return;
+
+  // Read at trigger time, so a newly promoted admin is included.
+  const admins = db
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(eq(users.role, UserRole.Admin))
+    .all()
+    .filter((admin) => admin.id !== row.buyer.id);
+
+  if (admins.length === 0) return;
+
+  await send(notifier, {
+    workflow: "refund-request-opened",
+    recipients: admins.map(toRecipient),
+    data: {
+      kind: "refund_request_opened",
+      actor_name: row.buyer.name,
+      course_title: row.courseTitle,
+      amount: formatPrice(row.amountPaid),
+      reason: row.reason,
+      url: "/admin/refunds",
+    },
+    idempotencyKey: `refund:${refundRequestId}:opened`,
+  });
+}
 
 const DECISIONS: Partial<
   Record<RefundStatus, { workflow: string; kind: string }>
@@ -91,5 +149,110 @@ export async function notifyRefundRequestDecided(
           : "/settings",
     },
     idempotencyKey: `refund:${refundRequestId}:${row.status}`,
+  });
+}
+
+// ─── Seats ───
+
+const claimants = alias(users, "claimant");
+
+/** Tells the Team Licence's buyer that one of its Seats was claimed. */
+export async function notifySeatClaimed(
+  db: Db,
+  notifier: Notifier,
+  seatId: number
+): Promise<void> {
+  const row = db
+    .select({
+      purchaseId: coupons.purchaseId,
+      buyer: { id: users.id, name: users.name, email: users.email },
+      claimant: { id: claimants.id, name: claimants.name, email: claimants.email },
+      courseTitle: courses.title,
+    })
+    .from(coupons)
+    .innerJoin(purchases, eq(coupons.purchaseId, purchases.id))
+    .innerJoin(users, eq(purchases.userId, users.id))
+    .innerJoin(claimants, eq(coupons.redeemedByUserId, claimants.id))
+    .innerJoin(courses, eq(coupons.courseId, courses.id))
+    .where(eq(coupons.id, seatId))
+    .get();
+
+  if (!row) return;
+  if (row.claimant.id === row.buyer.id) return;
+
+  // Unclaimed Seats that can still be claimed: not claimed, not refunded.
+  const unclaimed = db
+    .select({ n: count() })
+    .from(coupons)
+    .where(
+      and(
+        eq(coupons.purchaseId, row.purchaseId),
+        isNull(coupons.redeemedAt),
+        isNull(coupons.refundedAt)
+      )
+    )
+    .get();
+
+  await send(notifier, {
+    workflow: "seat-claimed",
+    recipients: [toRecipient(row.buyer)],
+    actor: toRecipient(row.claimant),
+    data: {
+      kind: "seat_claimed",
+      actor_name: row.claimant.name,
+      course_title: row.courseTitle,
+      seats_left: unclaimed?.n ?? 0,
+      url: "/team",
+    },
+    idempotencyKey: `seat:${seatId}:claimed`,
+  });
+}
+
+// ─── Enrollments ───
+
+const instructors = alias(users, "instructor");
+
+/**
+ * Tells the course's Instructor about a new Enrollment, from an Individual
+ * Purchase or a Claimed Seat. New Enrollment is off by default, but that is a
+ * Knock preference: this always triggers.
+ */
+export async function notifyEnrollmentCreated(
+  db: Db,
+  notifier: Notifier,
+  enrollmentId: number
+): Promise<void> {
+  const row = db
+    .select({
+      student: { id: users.id, name: users.name, email: users.email },
+      instructor: {
+        id: instructors.id,
+        name: instructors.name,
+        email: instructors.email,
+      },
+      courseId: courses.id,
+      courseTitle: courses.title,
+    })
+    .from(enrollments)
+    .innerJoin(users, eq(enrollments.userId, users.id))
+    .innerJoin(courses, eq(enrollments.courseId, courses.id))
+    .innerJoin(instructors, eq(courses.instructorId, instructors.id))
+    .where(eq(enrollments.id, enrollmentId))
+    .get();
+
+  if (!row) return;
+  if (row.student.id === row.instructor.id) return;
+
+  await send(notifier, {
+    workflow: "enrollment-created",
+    recipients: [toRecipient(row.instructor)],
+    actor: toRecipient(row.student),
+    data: {
+      kind: "enrollment_created",
+      actor_name: row.student.name,
+      course_title: row.courseTitle,
+      url: `/instructor/${row.courseId}/students`,
+    },
+    idempotencyKey: `enrollment:${enrollmentId}:created`,
   });
 }
