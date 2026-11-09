@@ -20,6 +20,7 @@ import type {
   ChannelPreference,
   Notifier,
   Recipient,
+  StoredPreferences,
   Trigger,
 } from "~/lib/notifier.server";
 import {
@@ -246,11 +247,23 @@ export async function listNotificationPreferences(
   const person = loadPerson(db, userId);
   const rows = PREFERENCE_ROWS.filter((row) => row.canGet(person));
   const stored = await notifier.getPreferences(String(userId));
-  return rows.map(({ workflow, label, defaults }) => {
-    const notifyMe = stored[workflow]?.in_app_feed ?? defaults.in_app_feed;
-    const email = stored[workflow]?.email ?? defaults.email;
-    return { workflow, label, notifyMe, email: notifyMe && email };
-  });
+  return rows.map((row) => ({
+    workflow: row.workflow,
+    label: row.label,
+    ...effectiveChoice(row, stored),
+  }));
+}
+
+type Choice = { notifyMe: boolean; email: boolean };
+
+/** What applies for one row: what is stored, else the row's default. */
+function effectiveChoice(
+  row: PreferenceRowDefinition,
+  stored: StoredPreferences
+): Choice {
+  const notifyMe = stored[row.workflow]?.in_app_feed ?? row.defaults.in_app_feed;
+  const email = stored[row.workflow]?.email ?? row.defaults.email;
+  return { notifyMe, email: notifyMe && email };
 }
 
 /** Thrown for a Notification the person can't get, so has no row to set. */
@@ -261,16 +274,27 @@ export class UnknownNotificationPreferenceError extends Error {
   }
 }
 
+/** One toggle flipped on /settings. */
+export type NotificationPreferenceChange = {
+  channel: "notifyMe" | "email";
+  on: boolean;
+};
+
 /**
- * Stores one Notification Preference. Turning Notify me off turns email off
- * too: Knock never holds "Feed off, email on" for Cadence.
+ * Stores one flipped toggle. The person says which toggle they flipped; this
+ * decides what both Channels become:
+ *
+ * - Turning Notify me off turns email off too: Knock never holds "Feed off,
+ *   email on" for Cadence.
+ * - Turning Notify me back on returns email to the row's default.
+ * - Email only changes while Notify me is on.
  */
 export async function setNotificationPreference(
   db: Db,
   notifier: Notifier,
   userId: number,
   workflow: NotificationWorkflow,
-  choice: { notifyMe: boolean; email: boolean }
+  change: NotificationPreferenceChange
 ): Promise<void> {
   const person = loadPerson(db, userId);
   const row = PREFERENCE_ROWS.find((row) => row.workflow === workflow);
@@ -278,10 +302,25 @@ export async function setNotificationPreference(
     throw new UnknownNotificationPreferenceError(workflow);
   }
 
+  const stored = await notifier.getPreferences(String(userId));
+  const next = nextChoice(row, effectiveChoice(row, stored), change);
   await notifier.setPreference(String(userId), workflow, {
-    in_app_feed: choice.notifyMe,
-    email: choice.notifyMe && choice.email,
+    in_app_feed: next.notifyMe,
+    email: next.email,
   });
+}
+
+function nextChoice(
+  row: PreferenceRowDefinition,
+  current: Choice,
+  change: NotificationPreferenceChange
+): Choice {
+  if (change.channel === "email") {
+    return { notifyMe: current.notifyMe, email: current.notifyMe && change.on };
+  }
+  if (!change.on) return { notifyMe: false, email: false };
+  if (current.notifyMe) return current;
+  return { notifyMe: true, email: row.defaults.email };
 }
 
 // ─── Seats ───

@@ -39,8 +39,8 @@ const settingsSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("set-notification-preference"),
     workflow: z.enum(NOTIFICATION_WORKFLOWS),
-    notifyMe: flag,
-    email: flag,
+    channel: z.enum(["notifyMe", "email"]),
+    on: flag,
   }),
 ]);
 
@@ -130,11 +130,11 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   if (parsed.data.intent === "set-notification-preference") {
-    const { workflow, notifyMe, email } = parsed.data;
+    const { workflow, channel, on } = parsed.data;
     try {
       await setNotificationPreference(db, defaultNotifier(), currentUser.id, workflow, {
-        notifyMe,
-        email,
+        channel,
+        on,
       });
     } catch (error) {
       if (error instanceof UnknownNotificationPreferenceError) {
@@ -341,12 +341,18 @@ function NotificationPreferenceRowItem({
 }) {
   const fetcher = useFetcher<typeof action>();
 
-  // Show the choice being saved until the loader has the stored one.
+  // Show the flipped toggle until the loader has what the server stored.
+  // The server decides the other one (turning Notify me on returns email to
+  // its default), so it shows as it was, or off with Notify me.
   const pending = fetcher.formData;
-  const notifyMe = pending
-    ? pending.get("notifyMe") === "true"
-    : preference.notifyMe;
-  const email = pending ? pending.get("email") === "true" : preference.email;
+  const pendingOn = pending?.get("on") === "true";
+  let { notifyMe, email } = preference;
+  if (pending?.get("channel") === "notifyMe") {
+    notifyMe = pendingOn;
+    if (!pendingOn) email = false;
+  } else if (pending?.get("channel") === "email") {
+    email = pendingOn;
+  }
 
   useEffect(() => {
     if (
@@ -358,13 +364,13 @@ function NotificationPreferenceRowItem({
     }
   }, [fetcher.state, fetcher.data]);
 
-  function save(next: { notifyMe: boolean; email: boolean }) {
+  function save(channel: "notifyMe" | "email", on: boolean) {
     fetcher.submit(
       {
         intent: "set-notification-preference",
         workflow: preference.workflow,
-        notifyMe: String(next.notifyMe),
-        email: String(next.notifyMe && next.email),
+        channel,
+        on: String(on),
       },
       { method: "post" }
     );
@@ -381,7 +387,7 @@ function NotificationPreferenceRowItem({
           <Switch
             id={notifyMeId}
             checked={notifyMe}
-            onCheckedChange={(checked) => save({ notifyMe: checked, email })}
+            onCheckedChange={(checked) => save("notifyMe", checked)}
           />
           <Label htmlFor={notifyMeId} className="font-normal">
             Notify me
@@ -392,7 +398,7 @@ function NotificationPreferenceRowItem({
             id={emailId}
             checked={email}
             disabled={!notifyMe}
-            onCheckedChange={(checked) => save({ notifyMe, email: checked })}
+            onCheckedChange={(checked) => save("email", checked)}
           />
           <Label htmlFor={emailId} className="font-normal">
             Email

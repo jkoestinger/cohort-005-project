@@ -142,19 +142,23 @@ describe("listNotificationPreferences", () => {
 });
 
 describe("setNotificationPreference", () => {
-  it("stores a Notification's Feed and email Channels", async () => {
+  function rowFor(rows: { workflow: string }[], workflow: string) {
+    return rows.find((row) => row.workflow === workflow);
+  }
+
+  it("turns email off for a Notification, leaving Notify me on", async () => {
     const notifier = fakeNotifier();
 
     await setNotificationPreference(db, notifier, base.user.id, "discussion-reply-posted", {
-      notifyMe: true,
-      email: false,
+      channel: "email",
+      on: false,
     });
 
     expect(notifier.preferences.get(String(base.user.id))).toEqual({
       "discussion-reply-posted": { in_app_feed: true, email: false },
     });
     const rows = await listNotificationPreferences(db, notifier, base.user.id);
-    expect(rows.find((row) => row.workflow === "discussion-reply-posted")).toMatchObject({
+    expect(rowFor(rows, "discussion-reply-posted")).toMatchObject({
       notifyMe: true,
       email: false,
     });
@@ -164,8 +168,8 @@ describe("setNotificationPreference", () => {
     const notifier = fakeNotifier();
 
     await setNotificationPreference(db, notifier, base.user.id, "refund-request-approved", {
-      notifyMe: false,
-      email: true,
+      channel: "notifyMe",
+      on: false,
     });
 
     expect(notifier.preferences.get(String(base.user.id))).toEqual({
@@ -173,16 +177,81 @@ describe("setNotificationPreference", () => {
     });
   });
 
-  it("leaves every other Notification as it is", async () => {
+  it("returns email to the row's default when Notify me is turned back on", async () => {
     const notifier = fakeNotifier();
-    await setNotificationPreference(db, notifier, base.user.id, "refund-request-approved", {
-      notifyMe: false,
-      email: false,
+    buySeats(base.user.id, 3);
+    for (const workflow of ["refund-request-approved", "seat-claimed"] as const) {
+      await setNotificationPreference(db, notifier, base.user.id, workflow, {
+        channel: "notifyMe",
+        on: false,
+      });
+      await setNotificationPreference(db, notifier, base.user.id, workflow, {
+        channel: "notifyMe",
+        on: true,
+      });
+    }
+
+    const rows = await listNotificationPreferences(db, notifier, base.user.id);
+
+    expect(rowFor(rows, "refund-request-approved")).toMatchObject({ notifyMe: true, email: true });
+    expect(rowFor(rows, "seat-claimed")).toMatchObject({ notifyMe: true, email: false });
+  });
+
+  it("returns New Enrollment's email to off when its Notify me is turned on", async () => {
+    const notifier = fakeNotifier();
+
+    await setNotificationPreference(db, notifier, base.instructor.id, "enrollment-created", {
+      channel: "notifyMe",
+      on: true,
+    });
+
+    const rows = await listNotificationPreferences(db, notifier, base.instructor.id);
+    expect(rowFor(rows, "enrollment-created")).toMatchObject({ notifyMe: true, email: false });
+  });
+
+  it("keeps the email choice when Notify me is turned on while it is already on", async () => {
+    const notifier = fakeNotifier();
+    await setNotificationPreference(db, notifier, base.user.id, "discussion-reply-posted", {
+      channel: "email",
+      on: false,
+    });
+
+    await setNotificationPreference(db, notifier, base.user.id, "discussion-reply-posted", {
+      channel: "notifyMe",
+      on: true,
+    });
+
+    const rows = await listNotificationPreferences(db, notifier, base.user.id);
+    expect(rowFor(rows, "discussion-reply-posted")).toMatchObject({ notifyMe: true, email: false });
+  });
+
+  it("keeps email off while Notify me is off", async () => {
+    const notifier = fakeNotifier();
+    await setNotificationPreference(db, notifier, base.user.id, "refund-request-declined", {
+      channel: "notifyMe",
+      on: false,
     });
 
     await setNotificationPreference(db, notifier, base.user.id, "refund-request-declined", {
-      notifyMe: true,
-      email: false,
+      channel: "email",
+      on: true,
+    });
+
+    expect(notifier.preferences.get(String(base.user.id))).toEqual({
+      "refund-request-declined": { in_app_feed: false, email: false },
+    });
+  });
+
+  it("leaves every other Notification as it is", async () => {
+    const notifier = fakeNotifier();
+    await setNotificationPreference(db, notifier, base.user.id, "refund-request-approved", {
+      channel: "notifyMe",
+      on: false,
+    });
+
+    await setNotificationPreference(db, notifier, base.user.id, "refund-request-declined", {
+      channel: "email",
+      on: false,
     });
 
     expect(notifier.preferences.get(String(base.user.id))).toEqual({
@@ -196,8 +265,8 @@ describe("setNotificationPreference", () => {
 
     await expect(
       setNotificationPreference(db, notifier, base.user.id, "refund-request-opened", {
-        notifyMe: false,
-        email: false,
+        channel: "notifyMe",
+        on: false,
       })
     ).rejects.toThrow();
 
