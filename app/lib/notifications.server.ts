@@ -365,3 +365,32 @@ export async function notifyCommentPosted(
     idempotencyKey: `comment:${row.id}:posted`,
   });
 }
+
+/**
+ * Takes a deleted Discussion Question's or Discussion Reply's own
+ * Notification out of the recipient's Notification Feed, so nobody follows a
+ * link to it. Notifications about other comments in the thread stay, and sent
+ * emails stay sent. Call it once, right after the soft delete.
+ */
+export async function notifyCommentDeleted(
+  db: Db,
+  notifier: Notifier,
+  commentId: number
+): Promise<void> {
+  const comment = db
+    .select({ deletedAt: comments.deletedAt })
+    .from(comments)
+    .where(eq(comments.id, commentId))
+    .get();
+  // A live comment's Notifications stay.
+  if (!comment || comment.deletedAt === null) return;
+
+  try {
+    await notifier.archiveByCommentId(commentId);
+  } catch (error) {
+    console.error(
+      `[notifications] Could not archive the Notifications for comment ${commentId}:`,
+      error
+    );
+  }
+}

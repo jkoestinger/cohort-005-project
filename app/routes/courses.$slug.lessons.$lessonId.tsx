@@ -11,7 +11,10 @@ import {
 } from "~/components/comment-thread";
 import { MIN_COMMENT_LENGTH, MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { db } from "~/db";
-import { notifyCommentPosted } from "~/lib/notifications.server";
+import {
+  notifyCommentDeleted,
+  notifyCommentPosted,
+} from "~/lib/notifications.server";
 import { defaultNotifier } from "~/lib/notifier.server";
 import {
   categories,
@@ -936,6 +939,10 @@ export async function action({ params, request }: Route.ActionArgs) {
         throw data("Comment not found", { status: 404 });
       }
       deleteComment(parsed.data.commentId, currentUserId, access.isStaff);
+      // A repeat delete changes nothing, so it archives nothing either.
+      if (existing.deletedAt === null) {
+        await notifyCommentDeleted(db, defaultNotifier(), existing.id);
+      }
       return { ok: true };
     } catch (error) {
       // Service validation failures are user-correctable; anything thrown as a

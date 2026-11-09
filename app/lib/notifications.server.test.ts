@@ -9,6 +9,7 @@ import {
   raiseRefundRequest,
 } from "./refunds.server";
 import {
+  notifyCommentDeleted,
   notifyCommentPosted,
   notifyEnrollmentCreated,
   notifyRefundRequestDecided,
@@ -203,6 +204,9 @@ describe("notifyRefundRequestDecided", () => {
       async trigger() {
         throw failure;
       },
+      async archiveByCommentId() {
+        throw failure;
+      },
     };
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -307,6 +311,9 @@ describe("notifyRefundRequestRaised", () => {
     const failure = new Error("Knock is down");
     const failing: Notifier = {
       async trigger() {
+        throw failure;
+      },
+      async archiveByCommentId() {
         throw failure;
       },
     };
@@ -539,6 +546,9 @@ function failingNotifier(): Notifier {
     async trigger() {
       throw new Error("Knock is down");
     },
+    async archiveByCommentId() {
+      throw new Error("Knock is down");
+    },
   };
 }
 
@@ -699,12 +709,90 @@ describe("notifyCommentPosted", () => {
       async trigger() {
         throw failure;
       },
+      async archiveByCommentId() {
+        throw failure;
+      },
     };
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await expect(notifyCommentPosted(db, failing, question.id)).resolves.toBeUndefined();
 
     expect(logged).toHaveBeenCalledWith(expect.any(String), failure);
+    logged.mockRestore();
+  });
+});
+
+describe("notifyCommentDeleted", () => {
+  let lesson: typeof schema.lessons.$inferSelect;
+
+  beforeEach(() => {
+    const module = db
+      .insert(schema.modules)
+      .values({ courseId: base.course.id, title: "Basics", position: 1 })
+      .returning()
+      .get();
+    lesson = db
+      .insert(schema.lessons)
+      .values({ moduleId: module.id, title: "Hooks", position: 1 })
+      .returning()
+      .get();
+  });
+
+  function post(userId: number, parentId: number | null = null) {
+    return db
+      .insert(schema.comments)
+      .values({ lessonId: lesson.id, userId, parentId, body: "A comment" })
+      .returning()
+      .get();
+  }
+
+  function softDelete(commentId: number) {
+    db.update(schema.comments)
+      .set({ deletedAt: NOW.toISOString() })
+      .where(eq(schema.comments.id, commentId))
+      .run();
+  }
+
+  it("archives the deleted comment's Notifications by its commentId", async () => {
+    const question = post(base.user.id);
+    softDelete(question.id);
+    const notifier = fakeNotifier();
+
+    await notifyCommentDeleted(db, notifier, question.id);
+
+    expect(notifier.archivedCommentIds).toEqual([question.id]);
+  });
+
+  it("leaves the Notifications for a deleted Discussion Question's replies", async () => {
+    const question = post(base.user.id);
+    post(base.instructor.id, question.id);
+    softDelete(question.id);
+    const notifier = fakeNotifier();
+
+    await notifyCommentDeleted(db, notifier, question.id);
+
+    expect(notifier.archivedCommentIds).toEqual([question.id]);
+  });
+
+  it("archives nothing for a comment that isn't deleted", async () => {
+    const question = post(base.user.id);
+    const notifier = fakeNotifier();
+
+    await notifyCommentDeleted(db, notifier, question.id);
+
+    expect(notifier.archivedCommentIds).toEqual([]);
+  });
+
+  it("logs a Notifier failure instead of throwing it", async () => {
+    const question = post(base.user.id);
+    softDelete(question.id);
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(
+      notifyCommentDeleted(db, failingNotifier(), question.id)
+    ).resolves.toBeUndefined();
+
+    expect(logged).toHaveBeenCalled();
     logged.mockRestore();
   });
 });

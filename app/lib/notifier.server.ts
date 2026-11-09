@@ -28,13 +28,23 @@ export type Trigger = {
 
 export interface Notifier {
   trigger(trigger: Trigger): Promise<void>;
+  /**
+   * Archives the Feed messages whose trigger data has this top-level
+   * `commentId`, so they leave every recipient's Notification Feed. Sent
+   * emails stay sent. Knock archives them shortly after the call returns.
+   */
+  archiveByCommentId(commentId: number): Promise<void>;
 }
 
 // Notifications are best effort: give up after a few seconds instead of the
 // SDK's default minute. The SDK keeps its own 2 retries; we write none.
 const KNOCK_TIMEOUT_MS = 5_000;
 
-export function knockNotifier(apiKey: string): Notifier {
+/**
+ * Delivers through Knock. Archiving needs the Feed's channel id; without one
+ * there is no Feed to archive from, so archive calls are logged and dropped.
+ */
+export function knockNotifier(apiKey: string, feedChannelId?: string): Notifier {
   const knock = new Knock({ apiKey, timeout: KNOCK_TIMEOUT_MS });
 
   return {
@@ -44,6 +54,18 @@ export function knockNotifier(apiKey: string): Notifier {
         { recipients, actor, data },
         { idempotencyKey }
       );
+    },
+    async archiveByCommentId(commentId) {
+      if (!feedChannelId) {
+        console.info(
+          `[notifier] KNOCK_FEED_CHANNEL_ID is not set; did not archive comment ${commentId}.`
+        );
+        return;
+      }
+      // trigger_data is a JSON string matched against the flat trigger data.
+      await knock.channels.bulk.updateMessageStatus(feedChannelId, "archive", {
+        trigger_data: JSON.stringify({ commentId }),
+      });
     },
   };
 }
@@ -55,6 +77,11 @@ export function loggingNotifier(): Notifier {
         `[notifier] KNOCK_API_KEY is not set; dropped ${workflow} (${idempotencyKey}).`
       );
     },
+    async archiveByCommentId(commentId) {
+      console.info(
+        `[notifier] KNOCK_API_KEY is not set; did not archive comment ${commentId}.`
+      );
+    },
   };
 }
 
@@ -64,7 +91,9 @@ let defaultInstance: Notifier | undefined;
 export function defaultNotifier(): Notifier {
   if (!defaultInstance) {
     const apiKey = process.env.KNOCK_API_KEY;
-    defaultInstance = apiKey ? knockNotifier(apiKey) : loggingNotifier();
+    defaultInstance = apiKey
+      ? knockNotifier(apiKey, process.env.KNOCK_FEED_CHANNEL_ID)
+      : loggingNotifier();
   }
   return defaultInstance;
 }
