@@ -24,3 +24,10 @@ export const NOTIFICATION_WORKFLOWS = Object.keys(NOTIFICATION_KINDS) as [
   NotificationWorkflow,
   ...NotificationWorkflow[],
 ];
+
+/**
+ * The Knock workflow category every Cadence workflow is tagged with. The Feed
+ * only reads workflows in it, so its counts and its rows always cover the
+ * same Notifications. A workflow without it never shows in the Feed.
+ */
+export const NOTIFICATION_WORKFLOW_CATEGORY = "cadence";

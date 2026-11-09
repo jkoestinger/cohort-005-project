@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Feed, FeedItem } from "@knocklabs/client";
 import { z } from "zod";
 import type { FeedAuth } from "~/lib/notification-feed.server";
+import { NOTIFICATION_WORKFLOW_CATEGORY } from "~/lib/notification-kinds";
 
 // ─── The Notification Feed in the browser ───
 // Reads the signed-in person's Feed straight from Knock with @knocklabs/client
@@ -98,6 +99,9 @@ export function useNotificationFeed(auth: FeedAuth | null): NotificationFeed {
 
       const feed = knock.feeds.initialize(feedChannelId, {
         archived: "exclude",
+        // Only Cadence's own workflows, so the badge never counts a message
+        // the rows can't describe.
+        workflow_categories: [NOTIFICATION_WORKFLOW_CATEGORY],
         page_size: 50,
       });
       feedRef.current = feed;
