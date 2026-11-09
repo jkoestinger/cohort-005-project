@@ -12,6 +12,11 @@ if (!course) throw data("Course not found", { status: 404 });
 The route then has one success path. A returned error shape gives every
 component a second path to forget about.
 
+One exception: a fetcher-driven inline action, like a toggle that saves
+straight away, may return an error payload. A thrown response would replace
+the whole page with the error boundary; a returned one lets the component
+show a toast and leave the page as it was.
+
 ## Parse untrusted input with a schema
 
 Form data, search parameters and request bodies get a zod schema before the
