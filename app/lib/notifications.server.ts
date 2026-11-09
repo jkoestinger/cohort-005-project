@@ -163,8 +163,12 @@ export async function notifyRefundRequestDecided(
 // ─── Notification Preferences ───
 // Which Notifications a person can get, and whether each reaches them at all
 // (Notify me, which is their Feed) and by email. Knock stores the choices; the
-// defaults live here, so what a person sees doesn't depend on whether Knock
-// returns its environment defaults when nothing is stored.
+// defaults live here too: for a user with nothing stored, Knock Development's
+// getPreferences returned `workflows: null` (checked Nov 2026), so it can't be
+// relied on to hand back the environment defaults.
+//
+// The `defaults` below MUST match Knock's environment default preference set,
+// which is what Knock applies when it delivers. #37 checks that they do.
 
 /** Who a Notification can reach. */
 type Person = { role: UserRole; ownsTeamLicence: boolean };
