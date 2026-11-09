@@ -21,7 +21,6 @@ import {
   type RefundRequestForReview,
 } from "~/lib/refunds.server";
 import { RULE_BREAK_LABELS } from "~/lib/refund-rules";
-import { sendEmail } from "~/lib/mailer.server";
 import { notifyRefundRequestDecided } from "~/lib/notifications.server";
 import { defaultNotifier } from "~/lib/notifier.server";
 
@@ -129,7 +128,6 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ error: result.error }, { status: result.status });
   }
 
-  await sendEmail(result.email);
   await notifyRefundRequestDecided(db, defaultNotifier(), refundRequestId);
 
   return {
