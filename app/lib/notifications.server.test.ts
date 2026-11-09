@@ -193,6 +193,7 @@ describe("notifyRefundRequestDecided", () => {
     approve(refundRequestId, platformAdmin.id, null);
     const failure = new Error("Knock is down");
     const failing: Notifier = {
+      ...fakeNotifier(),
       async trigger() {
         throw failure;
       },

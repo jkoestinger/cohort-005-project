@@ -1,7 +1,20 @@
 import { eq } from "drizzle-orm";
-import { courses, purchases, refunds, RefundStatus, users } from "~/db/schema";
+import {
+  coupons,
+  courses,
+  purchases,
+  refunds,
+  RefundStatus,
+  UserRole,
+  users,
+} from "~/db/schema";
 import { getPurchaseKind, type Db } from "~/lib/refunds.server";
-import type { Notifier, Recipient, Trigger } from "~/lib/notifier.server";
+import type {
+  ChannelPreference,
+  Notifier,
+  Recipient,
+  Trigger,
+} from "~/lib/notifier.server";
 
 // ─── Notifications ───
 // Who is told about what. Each function is shaped like an event, takes the
@@ -91,5 +104,130 @@ export async function notifyRefundRequestDecided(
           : "/settings",
     },
     idempotencyKey: `refund:${refundRequestId}:${row.status}`,
+  });
+}
+
+// ─── Notification Preferences ───
+// Which Notifications a person can get, and whether each reaches them at all
+// (Notify me, which is their Feed) and by email. Knock stores the choices; the
+// defaults live here, so what a person sees doesn't depend on whether Knock
+// returns its environment defaults when nothing is stored.
+
+/** Who a Notification can reach. */
+type Person = { role: UserRole; ownsTeamLicence: boolean };
+
+type PreferenceRowDefinition = {
+  workflow: string;
+  label: string;
+  /** What applies while the person has nothing stored. */
+  defaults: ChannelPreference;
+  canGet: (person: Person) => boolean;
+};
+
+const ON: ChannelPreference = { in_app_feed: true, email: true };
+const EVERYONE = () => true;
+
+// In the order /settings lists them.
+const PREFERENCE_ROWS: PreferenceRowDefinition[] = [
+  { workflow: "refund-request-approved", label: "Refund Request approved", defaults: ON, canGet: EVERYONE },
+  { workflow: "refund-request-declined", label: "Refund Request declined", defaults: ON, canGet: EVERYONE },
+  { workflow: "discussion-reply-posted", label: "Discussion Reply", defaults: ON, canGet: EVERYONE },
+  {
+    workflow: "seat-claimed",
+    label: "Seat claimed",
+    // A large Team Licence would flood the inbox.
+    defaults: { in_app_feed: true, email: false },
+    canGet: (person) => person.ownsTeamLicence,
+  },
+  {
+    workflow: "enrollment-created",
+    label: "New Enrollment",
+    // Opt-in: a popular course would flood the Feed.
+    defaults: { in_app_feed: false, email: false },
+    canGet: (person) => person.role === UserRole.Instructor,
+  },
+  {
+    workflow: "discussion-question-posted",
+    label: "New Discussion Question",
+    defaults: ON,
+    canGet: (person) => person.role === UserRole.Instructor,
+  },
+  {
+    workflow: "refund-request-opened",
+    label: "New Open Refund Request",
+    defaults: ON,
+    canGet: (person) => person.role === UserRole.Admin,
+  },
+];
+
+export type NotificationPreferenceRow = {
+  workflow: string;
+  label: string;
+  notifyMe: boolean;
+  email: boolean;
+};
+
+function loadPerson(db: Db, userId: number): Person {
+  const user = db
+    .select({ role: users.role })
+    .from(users)
+    .where(eq(users.id, userId))
+    .get();
+  if (!user) throw new Error(`User ${userId} not found.`);
+
+  // A Team Licence is a Purchase that granted Seats.
+  const teamLicence = db
+    .select({ id: purchases.id })
+    .from(purchases)
+    .innerJoin(coupons, eq(coupons.purchaseId, purchases.id))
+    .where(eq(purchases.userId, userId))
+    .get();
+  return { role: user.role, ownsTeamLicence: teamLicence !== undefined };
+}
+
+/** The Notification Preferences this person can set, with their effective values. */
+export async function listNotificationPreferences(
+  db: Db,
+  notifier: Notifier,
+  userId: number
+): Promise<NotificationPreferenceRow[]> {
+  const person = loadPerson(db, userId);
+  const rows = PREFERENCE_ROWS.filter((row) => row.canGet(person));
+  const stored = await notifier.getPreferences(String(userId));
+  return rows.map(({ workflow, label, defaults }) => {
+    const notifyMe = stored[workflow]?.in_app_feed ?? defaults.in_app_feed;
+    const email = stored[workflow]?.email ?? defaults.email;
+    return { workflow, label, notifyMe, email: notifyMe && email };
+  });
+}
+
+/** Thrown for a Notification the person can't get, so has no row to set. */
+export class UnknownNotificationPreferenceError extends Error {
+  constructor(workflow: string) {
+    super(`No Notification Preference "${workflow}" for this person.`);
+    this.name = "UnknownNotificationPreferenceError";
+  }
+}
+
+/**
+ * Stores one Notification Preference. Turning Notify me off turns email off
+ * too: Knock never holds "Feed off, email on" for Cadence.
+ */
+export async function setNotificationPreference(
+  db: Db,
+  notifier: Notifier,
+  userId: number,
+  workflow: string,
+  choice: { notifyMe: boolean; email: boolean }
+): Promise<void> {
+  const person = loadPerson(db, userId);
+  const row = PREFERENCE_ROWS.find((row) => row.workflow === workflow);
+  if (!row || !row.canGet(person)) {
+    throw new UnknownNotificationPreferenceError(workflow);
+  }
+
+  await notifier.setPreference(String(userId), workflow, {
+    in_app_feed: choice.notifyMe,
+    email: choice.notifyMe && choice.email,
   });
 }
